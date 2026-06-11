@@ -23,7 +23,9 @@ app.use('/api/teams',       require('./routes/teams'));
 app.use('/api/members',     require('./routes/members'));
 app.use('/api/projects',    require('./routes/projects'));
 app.use('/api/allocations', require('./routes/allocations'));
-
+app.use('/api/requests',    require('./routes/requests'));
+app.use('/api/tasks',       require('./routes/tasks'));
+app.use('/api/ai',          require('./routes/ai'));
 app.use(errorHandler);
 
 app.listen(PORT, () => {
