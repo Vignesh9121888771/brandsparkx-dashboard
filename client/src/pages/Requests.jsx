@@ -25,23 +25,44 @@ export default function Requests({ role }) {
   const [requests, setRequests] = useState([]);
   const [members,  setMembers]  = useState([]);
   const [form, setForm] = useState({ member_id: '', type: 'Leave', title: '', description: '', start_date: '', end_date: '' });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]   = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   const load = () => {
-    getRequests().then(r => setRequests(r.data.data));
-    getMembers().then(r  => setMembers(r.data.data));
+    setLoading(true);
+    Promise.all([getRequests(), getMembers()])
+      .then(([reqRes, memRes]) => {
+        setRequests(reqRes.data.data || []);
+        setMembers(memRes.data.data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Requests fetch error:", err);
+        setError("Failed to load requests.");
+        setLoading(false);
+      });
   };
 
   useEffect(() => { load(); }, []);
 
   const submit = async () => {
     if (!form.member_id || !form.title) return alert('Please fill all required fields');
-    setLoading(true);
-    await createRequest(form);
-    setForm({ member_id: '', type: 'Leave', title: '', description: '', start_date: '', end_date: '' });
-    load();
-    setLoading(false);
+    setSubmitting(true);
+    try {
+      await createRequest(form);
+      setForm({ member_id: '', type: 'Leave', title: '', description: '', start_date: '', end_date: '' });
+      load();
+    } catch (e) {
+      console.error(e);
+      alert("Failed to submit request.");
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading requests...</div>;
+  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
 
   return (
     <div className="page">
@@ -89,11 +110,11 @@ export default function Requests({ role }) {
             <input style={inp} type='date' value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} />
           </div>
         </div>
-        <button onClick={submit} disabled={loading} style={{
+        <button onClick={submit} disabled={submitting} style={{
           background: 'var(--purple)', color: '#fff', border: 'none',
           padding: '10px 24px', borderRadius: 'var(--radius-sm)',
-          fontSize: '13px', fontWeight: '500', opacity: loading ? 0.7 : 1
-        }}>{loading ? 'Submitting...' : 'Submit Request'}</button>
+          fontSize: '13px', fontWeight: '500', opacity: submitting ? 0.7 : 1
+        }}>{submitting ? 'Submitting...' : 'Submit Request'}</button>
       </div>
 
       {/* Requests list */}
@@ -112,15 +133,15 @@ export default function Requests({ role }) {
                 background: 'var(--purple-dim)', color: 'var(--purple-light)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '12px', fontWeight: '600', flexShrink: 0
-              }}>{r.member_name?.split(' ').map(n => n[0]).join('')}</div>
+              }}>{r.member_name?.split(' ').map(n => n[0]).join('') || '?'}</div>
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '600' }}>{r.title}</span>
-                  <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '20px', background: tc.bg, color: tc.color, fontWeight: '500' }}>{r.type}</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600' }}>{r.title || 'Untitled'}</span>
+                  <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '20px', background: tc.bg, color: tc.color, fontWeight: '500' }}>{r.type || 'Other'}</span>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-                  {r.member_name} · {r.member_role}
+                  {r.member_name || 'Unknown'} · {r.member_role || 'N/A'}
                   {r.description && ` · ${r.description.slice(0, 60)}...`}
                 </div>
               </div>
@@ -135,10 +156,13 @@ export default function Requests({ role }) {
               <span style={{
                 fontSize: '11px', padding: '4px 12px', borderRadius: '20px',
                 background: sc.bg, color: sc.color, fontWeight: '600', flexShrink: 0
-              }}>{r.status}</span>
+              }}>{r.status || 'Pending'}</span>
             </div>
           );
         })}
+        {requests.length === 0 && (
+          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>No requests found.</div>
+        )}
       </div>
     </div>
   );

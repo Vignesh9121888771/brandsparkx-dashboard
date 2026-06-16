@@ -53,6 +53,7 @@ Keep your response concise — 3 short paragraphs max:
       }
     );
 
+    if (!response.ok) throw new Error("AI Service Unavailable");
     const data = await response.json();
     const suggestion = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Unable to generate suggestion.';
     res.json({ success: true, suggestion, members: membersData });

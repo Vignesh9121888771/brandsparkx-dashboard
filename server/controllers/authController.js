@@ -25,16 +25,17 @@ const register = async (req, res, next) => {
     const password_hash = await bcrypt.hash(password, 12);
 
     const result = await db.query(
-      `INSERT INTO users (name, email, password_hash, role, member_id)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id, name, email, role, member_id`,
-      [name, email, password_hash, 'employee', memberData.id]
+      `INSERT INTO users (name, email, password_hash, role, member_id, region)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, email, role, member_id, region`,
+      [name, email, password_hash, 'employee', memberData.id, memberData.region]
     );
 
     const user  = result.rows[0];
-   const token = jwt.sign(
-  { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id, region: user.region },
-  process.env.JWT_SECRET,
-  { expiresIn: '7d' });
+    const token = jwt.sign(
+      { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id, region: user.region },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
     await db.query(
       'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
       [user.id, 'REGISTER', 'users', `Employee registered: ${user.email}`]
@@ -65,7 +66,7 @@ const login = async (req, res, next) => {
     await db.query('UPDATE users SET last_login=NOW() WHERE id=$1', [user.id]);
 
     const token = jwt.sign(
-      { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id },
+      { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id, region: user.region },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -78,7 +79,7 @@ const login = async (req, res, next) => {
 
     res.json({
       success: true, token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id }
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id, region: user.region }
     });
   } catch (err) { next(err); }
 };
@@ -86,7 +87,7 @@ const login = async (req, res, next) => {
 const getMe = async (req, res, next) => {
   try {
     const result = await db.query(
-      'SELECT id, name, email, role, member_id, created_at, last_login FROM users WHERE id=$1',
+      'SELECT id, name, email, role, member_id, region, created_at, last_login FROM users WHERE id=$1',
       [req.user.id]
     );
     res.json({ success: true, user: result.rows[0] });
@@ -96,7 +97,7 @@ const getMe = async (req, res, next) => {
 const getUsers = async (req, res, next) => {
   try {
     const result = await db.query(
-      `SELECT u.id, u.name, u.email, u.role, u.is_active, u.created_at, u.last_login,
+      `SELECT u.id, u.name, u.email, u.role, u.is_active, u.created_at, u.last_login, u.region,
               m.name as member_name, m.role as member_role
        FROM users u
        LEFT JOIN members m ON u.member_id = m.id

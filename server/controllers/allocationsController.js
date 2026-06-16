@@ -33,13 +33,15 @@ const updateAllocation = async (req, res, next) => {
       'UPDATE allocations SET allocation_percent=$1, start_date=$2, end_date=$3 WHERE id=$4 RETURNING *',
       [allocation_percent, start_date, end_date, req.params.id]
     );
+    if (!result.rows[0]) return res.status(404).json({ success: false, message: "Allocation not found" });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { next(err); }
 };
 
 const deleteAllocation = async (req, res, next) => {
   try {
-    await db.query('DELETE FROM allocations WHERE id = $1', [req.params.id]);
+    const result = await db.query('DELETE FROM allocations WHERE id = $1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: "Allocation not found" });
     res.json({ success: true, message: 'Allocation deleted' });
   } catch (err) { next(err); }
 };

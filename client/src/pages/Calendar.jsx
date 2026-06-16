@@ -4,14 +4,25 @@ import { getProjects, getTasks } from '../services/api';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-export default function Calendar({ user }) {
+export default function Calendar() {
   const [projects, setProjects] = useState([]);
   const [tasks,    setTasks]    = useState([]);
   const [current,  setCurrent]  = useState(new Date());
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState(null);
 
   useEffect(() => {
-    getProjects().then(r => setProjects(r.data.data));
-    getTasks().then(r    => setTasks(r.data.data));
+    Promise.all([getProjects(), getTasks()])
+      .then(([projRes, taskRes]) => {
+        setProjects(projRes.data.data || []);
+        setTasks(taskRes.data.data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Calendar fetch error:", err);
+        setError("Failed to load calendar data.");
+        setLoading(false);
+      });
   }, []);
 
   const year  = current.getFullYear();
@@ -25,9 +36,9 @@ export default function Calendar({ user }) {
   const getEventsForDay = (day) => {
     const date = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const pEvents = projects.filter(p => p.deadline?.slice(0,10) === date)
-      .map(p => ({ type: 'project', label: p.name, status: p.status }));
+      .map(p => ({ type: 'project', label: p.name || 'Untitled Project', status: p.status }));
     const tEvents = tasks.filter(t => t.due_date?.slice(0,10) === date)
-      .map(t => ({ type: 'task', label: t.title, priority: t.priority }));
+      .map(t => ({ type: 'task', label: t.title || 'Untitled Task', priority: t.priority }));
     return [...pEvents, ...tEvents];
   };
 
@@ -39,6 +50,9 @@ export default function Calendar({ user }) {
     .filter(p => p.deadline && new Date(p.deadline) >= new Date())
     .sort((a,b) => new Date(a.deadline) - new Date(b.deadline))
     .slice(0, 5);
+
+  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading calendar...</div>;
+  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
 
   return (
     <div className="page">
@@ -123,13 +137,13 @@ export default function Calendar({ user }) {
                   borderRadius: 'var(--radius-md)', marginBottom: '8px',
                   border: `1px solid ${urgent ? 'var(--red)' : 'var(--border)'}`,
                 }}>
-                  <div style={{ fontSize: '12px', fontWeight: '500', marginBottom: '3px' }}>{p.name}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px' }}>{p.client}</div>
+                  <div style={{ fontSize: '12px', fontWeight: '500', marginBottom: '3px' }}>{p.name || 'Untitled'}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px' }}>{p.client || 'Unknown'}</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '20px', background: urgent ? 'var(--red-dim)' : 'var(--bg-card)', color: urgent ? 'var(--red)' : 'var(--text-dim)' }}>
                       {days <= 0 ? 'Overdue!' : `${days} days left`}
                     </span>
-                    <span style={{ fontSize: '10px', color: sc[p.status] || 'var(--text-dim)' }}>{p.status}</span>
+                    <span style={{ fontSize: '10px', color: sc[p.status] || 'var(--text-dim)' }}>{p.status || 'N/A'}</span>
                   </div>
                 </div>
               );
@@ -157,7 +171,7 @@ export default function Calendar({ user }) {
                     fontSize: '11px', fontWeight: '700', flexShrink: 0
                   }}>{i+1}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '12px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                    <div style={{ fontSize: '12px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || 'Untitled'}</div>
                     <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>{new Date(p.deadline).toLocaleDateString('en-IN')}</div>
                   </div>
                 </div>

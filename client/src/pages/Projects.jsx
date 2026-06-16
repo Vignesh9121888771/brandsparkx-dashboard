@@ -11,11 +11,27 @@ const statusColors = {
 export default function Projects() {
   const [projects, setProjects] = useState([]);
   const [filter, setFilter]     = useState('All');
+  const [loading, setLoading]   = useState(true);
+  const [error,   setError]     = useState(null);
 
-  useEffect(() => { getProjects().then(r => setProjects(r.data.data)); }, []);
+  useEffect(() => {
+    getProjects()
+      .then(r => {
+        setProjects(r.data.data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Projects fetch error:", err);
+        setError("Failed to load projects.");
+        setLoading(false);
+      });
+  }, []);
 
   const statuses = ['All', 'Active', 'In Review', 'Planning', 'Completed'];
   const filtered = filter === 'All' ? projects : projects.filter(p => p.status === filter);
+
+  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading projects...</div>;
+  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
 
   return (
     <div className="page">
@@ -49,15 +65,12 @@ export default function Projects() {
           const urgent = days !== null && days <= 7;
           const progress = p.status === 'Completed' ? 100
             : p.status === 'Active' ? 65
-            : p.status === 'In Review' ? 85 : 20;
+            : p.status === 'In Review' ? 85
+            : 15;
 
           return (
-            <div key={p.id} style={{
-              background: 'var(--bg-card)', border: `1px solid var(--border)`,
-              borderRadius: 'var(--radius-lg)', padding: '20px',
-              transition: 'border-color 0.2s, transform 0.2s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-light)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+            <div key={p.id} className="card project-card" style={{ padding: '20px', transition: 'var(--transition)' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--purple)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'translateY(0)'; }}
             >
               {/* Top */}
@@ -65,16 +78,16 @@ export default function Projects() {
                 <span style={{
                   fontSize: '10px', padding: '3px 10px', borderRadius: '20px',
                   background: sc.bg, color: sc.color, fontWeight: '600'
-                }}>{p.status.toUpperCase()}</span>
+                }}>{(p.status || 'Planning').toUpperCase()}</span>
                 <span style={{
                   fontSize: '10px', padding: '3px 10px', borderRadius: '20px',
                   background: p.region === 'UAE' ? 'var(--blue-dim)' : 'var(--green-dim)',
                   color: p.region === 'UAE' ? 'var(--blue)' : 'var(--green)', fontWeight: '500'
-                }}>{p.region}</span>
+                }}>{p.region || 'All'}</span>
               </div>
 
-              <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>{p.name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '16px' }}>{p.client}</div>
+              <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>{p.name || 'Untitled Project'}</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '16px' }}>{p.client || 'No Client'}</div>
 
               {/* Progress */}
               <div style={{ marginBottom: '14px' }}>
@@ -106,6 +119,9 @@ export default function Projects() {
           );
         })}
       </div>
+      {filtered.length === 0 && (
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>No projects found.</div>
+      )}
     </div>
   );
 }

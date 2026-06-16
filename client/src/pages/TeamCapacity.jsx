@@ -1,25 +1,41 @@
 import { useEffect, useState } from 'react';
-import { getCapacity, getMembers } from '../services/api';
+import { getCapacity } from '../services/api';
 
 const statusInfo = (pct) => {
-  const p = parseInt(pct);
+  const p = parseInt(pct) || 0;
   if (p > 90) return { label: 'Overbooked', color: 'var(--red)',    bg: 'var(--red-dim)'    };
   if (p > 70) return { label: 'Optimal',    color: 'var(--yellow)', bg: 'var(--yellow-dim)' };
   if (p > 0)  return { label: 'Available',  color: 'var(--green)',  bg: 'var(--green-dim)'  };
   return              { label: 'Bench',      color: 'var(--text-dim)', bg: 'var(--bg-hover)' };
 };
 
-export default function TeamCapacity({ role }) {
+export default function TeamCapacity() {
   const [capacity, setCapacity] = useState([]);
   const [filter, setFilter]     = useState('All');
+  const [loading, setLoading]   = useState(true);
+  const [error,   setError]     = useState(null);
 
-  useEffect(() => { getCapacity().then(r => setCapacity(r.data.data)); }, []);
+  useEffect(() => {
+    getCapacity()
+      .then(r => {
+        setCapacity(r.data.data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Capacity fetch error:", err);
+        setError("Failed to load team capacity.");
+        setLoading(false);
+      });
+  }, []);
 
   const filters = ['All', 'Overbooked', 'Optimal', 'Available', 'Bench'];
   const filtered = capacity.filter(m => {
     if (filter === 'All') return true;
     return statusInfo(m.allocated_percent).label === filter;
   });
+
+  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading team capacity...</div>;
+  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
 
   return (
     <div className="page">
@@ -55,9 +71,9 @@ export default function TeamCapacity({ role }) {
       {/* Rows */}
       <div style={{ border: '1px solid var(--border)', borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', overflow: 'hidden' }}>
         {filtered.map((m, i) => {
-          const pct    = parseInt(m.allocated_percent);
+          const pct    = parseInt(m.allocated_percent) || 0;
           const status = statusInfo(pct);
-          const initials = m.name.split(' ').map(n => n[0]).join('');
+          const initials = m.name?.split(' ').map(n => n[0]).join('') || '?';
           return (
             <div key={m.id} style={{
               display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr 2fr 100px',
@@ -78,13 +94,13 @@ export default function TeamCapacity({ role }) {
                   fontSize: '12px', fontWeight: '600', flexShrink: 0
                 }}>{initials}</div>
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: '500' }}>{m.name}</div>
+                  <div style={{ fontSize: '13px', fontWeight: '500' }}>{m.name || 'Unknown'}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '1px' }}>ID #{m.id}</div>
                 </div>
               </div>
 
               {/* Role */}
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{m.role}</div>
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{m.role || 'N/A'}</div>
 
               {/* Region */}
               <span style={{
@@ -92,7 +108,7 @@ export default function TeamCapacity({ role }) {
                 background: m.region === 'UAE' ? 'var(--blue-dim)' : 'var(--green-dim)',
                 color: m.region === 'UAE' ? 'var(--blue)' : 'var(--green)',
                 fontWeight: '500', width: 'fit-content'
-              }}>{m.region}</span>
+              }}>{m.region || 'N/A'}</span>
 
               {/* Capacity bar */}
               <div style={{ paddingRight: '20px' }}>

@@ -37,22 +37,37 @@ export default function Analytics() {
   const [projects, setProjects] = useState([]);
   const [tasks,    setTasks]    = useState([]);
   const [members,  setMembers]  = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState(null);
 
   useEffect(() => {
-    getCapacity().then(r => setCapacity(r.data.data));
-    getProjects().then(r => setProjects(r.data.data));
-    getTasks().then(r    => setTasks(r.data.data));
-    getMembers().then(r  => setMembers(r.data.data));
+    Promise.all([getCapacity(), getProjects(), getTasks(), getMembers()])
+      .then(([capRes, projRes, taskRes, memRes]) => {
+        setCapacity(capRes.data.data || []);
+        setProjects(projRes.data.data || []);
+        setTasks(taskRes.data.data || []);
+        setMembers(memRes.data.data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Analytics fetch error:", err);
+        setError("Failed to load analytics data.");
+        setLoading(false);
+      });
   }, []);
 
+  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading analytics...</div>;
+  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
+
   const utilizationData = capacity.map(m => ({
-    name: m.name.split(' ')[0],
-    allocated: parseInt(m.allocated_percent),
-    available: parseInt(m.available_percent),
+    name: m.name?.split(' ')[0] || 'Unknown',
+    allocated: parseInt(m.allocated_percent) || 0,
+    available: parseInt(m.available_percent) || 0,
   }));
 
   const statusCount = projects.reduce((acc, p) => {
-    acc[p.status] = (acc[p.status] || 0) + 1;
+    const status = p.status || 'Unknown';
+    acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {});
   const pieData      = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
@@ -74,9 +89,9 @@ export default function Analytics() {
   const indiaCount = members.filter(m => m.region === 'India').length;
   const uaeCount   = members.filter(m => m.region === 'UAE').length;
   const avgUtil    = capacity.length
-    ? Math.round(capacity.reduce((s, c) => s + parseInt(c.allocated_percent), 0) / capacity.length)
+    ? Math.round(capacity.reduce((s, c) => s + (parseInt(c.allocated_percent) || 0), 0) / capacity.length)
     : 0;
-  const overloaded = capacity.filter(c => parseInt(c.allocated_percent) > 90).length;
+  const overloaded = capacity.filter(c => (parseInt(c.allocated_percent) || 0) > 90).length;
 
   return (
     <div className="page">
@@ -104,28 +119,32 @@ export default function Analytics() {
       {/* Charts row 1 */}
       <div className="grid-2-1" style={{ marginBottom: '16px' }}>
         <Card title="Employee Utilization" sub="Allocated vs available capacity per employee">
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={utilizationData} barSize={14} barGap={4}>
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} tickFormatter={v => v + '%'} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.02)' }} />
-              <Bar dataKey="allocated" name="Allocated" fill="var(--purple)" radius={[3,3,0,0]} unit="%" />
-              <Bar dataKey="available" name="Available" fill="var(--green)"  radius={[3,3,0,0]} unit="%" opacity={0.6} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', color: 'var(--text-dim)' }} />
-            </BarChart>
-          </ResponsiveContainer>
+          {utilizationData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={utilizationData} barSize={14} barGap={4}>
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} tickFormatter={v => v + '%'} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.02)' }} />
+                <Bar dataKey="allocated" name="Allocated" fill="var(--purple)" radius={[3,3,0,0]} unit="%" />
+                <Bar dataKey="available" name="Available" fill="var(--green)"  radius={[3,3,0,0]} unit="%" opacity={0.6} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', color: 'var(--text-dim)' }} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)' }}>No data available</div>}
         </Card>
 
         <Card title="Project Status" sub="Distribution by status">
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={pieData} cx="50%" cy="45%" innerRadius={50} outerRadius={75} dataKey="value" nameKey="name" paddingAngle={3}>
-                {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-              </Pie>
-              <Tooltip contentStyle={{ background: 'var(--bg-hover)', border: '1px solid var(--border-light)', borderRadius: '8px', fontSize: '11px' }} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', color: 'var(--text-dim)' }} />
-            </PieChart>
-          </ResponsiveContainer>
+          {pieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="45%" innerRadius={50} outerRadius={75} dataKey="value" nameKey="name" paddingAngle={3}>
+                  {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ background: 'var(--bg-hover)', border: '1px solid var(--border-light)', borderRadius: '8px', fontSize: '11px' }} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', color: 'var(--text-dim)' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)' }}>No projects</div>}
         </Card>
       </div>
 
@@ -184,23 +203,23 @@ export default function Analytics() {
         <Card title="High Risk Personnel" sub="Allocation above 80%">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
             {capacity
-              .filter(m => parseInt(m.allocated_percent) > 80)
-              .sort((a, b) => parseInt(b.allocated_percent) - parseInt(a.allocated_percent))
+              .filter(m => (parseInt(m.allocated_percent) || 0) > 80)
+              .sort((a, b) => (parseInt(b.allocated_percent) || 0) - (parseInt(a.allocated_percent) || 0))
               .map(m => {
-                const pct   = parseInt(m.allocated_percent);
+                const pct   = parseInt(m.allocated_percent) || 0;
                 const color = pct > 90 ? 'var(--red)' : 'var(--yellow)';
                 return (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: 'var(--bg-hover)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-                    <div className="avatar" style={{ fontSize: '10px' }}>{m.name.split(' ').map(n => n[0]).join('')}</div>
+                    <div className="avatar" style={{ fontSize: '10px' }}>{m.name?.split(' ').map(n => n[0]).join('') || '?'}</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '12px', fontWeight: '500' }}>{m.name}</div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>{m.role}</div>
+                      <div style={{ fontSize: '12px', fontWeight: '500' }}>{m.name || 'Unknown'}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>{m.role || 'N/A'}</div>
                     </div>
                     <div style={{ fontSize: '14px', fontWeight: '700', color, fontFamily: 'var(--font-mono)' }}>{pct}%</div>
                   </div>
                 );
               })}
-            {capacity.filter(m => parseInt(m.allocated_percent) > 80).length === 0 && (
+            {capacity.filter(m => (parseInt(m.allocated_percent) || 0) > 80).length === 0 && (
               <div style={{ color: 'var(--text-dim)', fontSize: '12px', textAlign: 'center', padding: '20px' }}>✅ No high-risk personnel</div>
             )}
           </div>

@@ -27,13 +27,15 @@ const updateProject = async (req, res, next) => {
       'UPDATE projects SET name=$1, client=$2, region=$3, status=$4, deadline=$5 WHERE id=$6 RETURNING *',
       [name, client, region, status, deadline, req.params.id]
     );
+    if (!result.rows[0]) return res.status(404).json({ success: false, message: "Project not found" });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { next(err); }
 };
 
 const deleteProject = async (req, res, next) => {
   try {
-    await db.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
+    const result = await db.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: "Project not found" });
     res.json({ success: true, message: 'Project deleted' });
   } catch (err) { next(err); }
 };
