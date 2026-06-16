@@ -18,7 +18,7 @@ export default function Projects() {
   const filtered = filter === 'All' ? projects : projects.filter(p => p.status === filter);
 
   return (
-    <div>
+    <div className="page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '28px' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>Projects Portfolio</h1>

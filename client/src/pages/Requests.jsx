@@ -44,7 +44,7 @@ export default function Requests({ role }) {
   };
 
   return (
-    <div>
+    <div className="page">
       <div style={{ marginBottom: '28px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>Requests</h1>
         <p style={{ color: 'var(--text-dim)', fontSize: '14px' }}>

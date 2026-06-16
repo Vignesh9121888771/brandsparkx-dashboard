@@ -19,6 +19,7 @@ app.get('/api/health', async (req, res) => {
     res.status(500).json({ success: false, message: 'DB not reachable' });
   }
 });
+app.use('/api/auth',        require('./routes/auth'));
 app.use('/api/teams',       require('./routes/teams'));
 app.use('/api/members',     require('./routes/members'));
 app.use('/api/projects',    require('./routes/projects'));

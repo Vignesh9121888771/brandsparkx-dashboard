@@ -1,8 +1,10 @@
 const router = require('express').Router();
-const { getAllMembers, createMember, deleteMember } = require('../controllers/membersController');
+const { getAllMembers, createMember, createBulkMembers, updateMember, deleteMember } = require('../controllers/membersController');
 
-router.get('/',       getAllMembers);
-router.post('/',      createMember);
-router.delete('/:id', deleteMember);
+router.get('/',         getAllMembers);
+router.post('/',        createMember);
+router.post('/bulk',    createBulkMembers);
+router.put('/:id',      updateMember);
+router.delete('/:id',   deleteMember);
 
 module.exports = router;

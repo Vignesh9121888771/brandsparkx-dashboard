@@ -1,207 +1,255 @@
-import { useEffect, useState } from 'react';
-import { getMembers, getProjects, getCapacity, getTasks } from '../services/api';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { useEffect, useState, useMemo } from 'react';
+import { getMembers, getProjects, getCapacity, getTasks, getRequests } from '../services/api';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
 
-const Card = ({ children, style = {} }) => (
-  <div style={{
-    background: 'var(--bg-card)', border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)', padding: '20px', ...style
-  }}>{children}</div>
-);
-
-const Metric = ({ label, value, sub, color = 'var(--text-primary)', icon }) => (
-  <Card>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-      <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <span style={{ fontSize: '18px' }}>{icon}</span>
-    </div>
-    <div style={{ fontSize: '28px', fontWeight: '700', color, fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>{value}</div>
-    <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{sub}</div>
-  </Card>
-);
-
-const CustomTooltip = ({ active, payload, label }) => {
+const CT = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: 'var(--bg-hover)', border: '1px solid var(--border-light)',
-      borderRadius: 'var(--radius-sm)', padding: '10px 14px', fontSize: '13px'
-    }}>
-      <div style={{ fontWeight: '600', marginBottom: '4px' }}>{label}</div>
-      <div style={{ color: 'var(--purple-light)' }}>{payload[0].value}% allocated</div>
+    <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', boxShadow: 'var(--shadow-md)' }}>
+      <div style={{ fontWeight: '600', marginBottom: '3px', color: 'var(--text-primary)' }}>{label}</div>
+      {payload.map((p, i) => <div key={i} style={{ color: p.fill || p.color }}>{p.name}: {p.value}%</div>)}
     </div>
   );
 };
 
-export default function Dashboard({ role }) {
-  const [members, setMembers]   = useState([]);
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+export default function Dashboard({ role, user, search, defaultRegion, onNavigate }) {
+  const [members,  setMembers]  = useState([]);
   const [projects, setProjects] = useState([]);
   const [capacity, setCapacity] = useState([]);
-  const [tasks, setTasks]       = useState([]);
+  const [tasks,    setTasks]    = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [region,   setRegion]   = useState(defaultRegion || 'All');
 
   useEffect(() => {
     getMembers().then(r  => setMembers(r.data.data));
     getProjects().then(r => setProjects(r.data.data));
     getCapacity().then(r => setCapacity(r.data.data));
     getTasks().then(r    => setTasks(r.data.data));
+    getRequests().then(r => setRequests(r.data.data));
   }, []);
 
-  const active      = projects.filter(p => p.status === 'Active').length;
-  const overloaded  = capacity.filter(c => parseInt(c.allocated_percent) > 90).length;
-  const available   = capacity.filter(c => parseInt(c.allocated_percent) < 50).length;
-  const avgCap      = capacity.length
-    ? Math.round(capacity.reduce((s, c) => s + parseInt(c.allocated_percent), 0) / capacity.length)
-    : 0;
+  const now   = new Date();
+  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  const dateStr  = `${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}`;
 
-  const chartData = capacity.map(m => ({
+  const fp = useMemo(() => projects.filter(p => {
+    const mr = region === 'All' || p.region === region;
+    const ms = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase());
+    return mr && ms;
+  }), [projects, region, search]);
+
+  const fm = useMemo(() => members.filter(m =>
+    !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.role.toLowerCase().includes(search.toLowerCase())
+  ), [members, search]);
+
+  const active     = fp.filter(p => p.status === 'Active').length;
+  const overloaded = capacity.filter(c => parseInt(c.allocated_percent) > 90).length;
+  const available  = capacity.filter(c => parseInt(c.allocated_percent) < 50).length;
+  const avgCap     = capacity.length ? Math.round(capacity.reduce((s,c) => s + parseInt(c.allocated_percent), 0) / capacity.length) : 0;
+  const pending    = requests.filter(r => r.status === 'Pending').length;
+
+  const urgentProjects = fp.filter(p => {
+    if (!p.deadline || p.status === 'Completed') return false;
+    const days = Math.ceil((new Date(p.deadline) - new Date()) / (1000*60*60*24));
+    return days <= 7 && days >= 0;
+  });
+
+  const chartData = capacity.slice(0,8).map(m => ({
     name: m.name.split(' ')[0],
     value: parseInt(m.allocated_percent),
   }));
 
-  const getBarColor = (v) => v > 90 ? 'var(--red)' : v > 70 ? 'var(--yellow)' : 'var(--green)';
+  const trendData = [
+    { day: 'Mon', util: 68 }, { day: 'Tue', util: 74 },
+    { day: 'Wed', util: 80 }, { day: 'Thu', util: 77 },
+    { day: 'Fri', util: avgCap }, { day: 'Sat', util: avgCap - 5 },
+  ];
 
-  const upcoming = projects
-    .filter(p => p.deadline)
-    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline))
-    .slice(0, 3);
+  const getColor = v => v > 90 ? 'var(--red)' : v > 70 ? 'var(--yellow)' : 'var(--green)';
+  const statusC  = { Active: 'var(--green)', 'In Review': 'var(--yellow)', Planning: 'var(--purple-light)', Completed: 'var(--text-dim)' };
+  const statusBg = { Active: 'var(--green-dim)', 'In Review': 'var(--yellow-dim)', Planning: 'var(--purple-dim)', Completed: 'var(--bg-hover)' };
 
-  const pendingTasks = tasks.filter(t => t.status === 'Pending').length;
-  const inProgress   = tasks.filter(t => t.status === 'In Progress').length;
+  const QUICK_ACTIONS = [
+    { icon: '➕', label: 'New Project',  action: () => onNavigate('projects')  },
+    { icon: '👤', label: 'Add Member',   action: () => onNavigate('manager')   },
+    { icon: '📋', label: 'Assign Task',  action: () => onNavigate('manager')   },
+    { icon: '📊', label: 'View Reports', action: () => onNavigate('analytics') },
+    { icon: '📅', label: 'Calendar',     action: () => onNavigate('calendar')  },
+    { icon: '◷',  label: 'Requests',     action: () => onNavigate('requests')  },
+  ];
 
   return (
-    <div>
-      {/* Header */}
-      <div style={{ marginBottom: '28px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>Command Center</h1>
-        <p style={{ color: 'var(--text-dim)', fontSize: '14px' }}>Real-time overview of agency operations and capacity.</p>
+    <div className="page">
+
+      {/* Deadline alerts */}
+      {urgentProjects.map(p => {
+        const days = Math.ceil((new Date(p.deadline) - new Date()) / (1000*60*60*24));
+        return (
+          <div key={p.id} className="alert-banner alert-danger">
+            ⚠️ <strong>{p.name}</strong> deadline in <strong>{days} day{days !== 1 ? 's' : ''}</strong> — {p.client}
+          </div>
+        );
+      })}
+
+      {/* Greeting */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+        <div className="greeting-section" style={{ marginBottom: 0 }}>
+          <div className="date">{dateStr}</div>
+          <h1>{greeting}, {user?.name?.split(' ')[0] || 'Manager'} 👋</h1>
+          <p>Here's what's happening across your projects today.</p>
+        </div>
+
+        {/* Region filter */}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {['All','India','UAE'].map(r => (
+            <button key={r} className={`filter-tab ${region===r?'active':''}`} onClick={() => setRegion(r)}>{r}</button>
+          ))}
+        </div>
       </div>
 
       {/* Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '14px', marginBottom: '24px' }}>
-        <Metric label="Total Staff"       value={members.length}  sub="Across India & UAE"   icon="👥" />
-        <Metric label="Active Projects"   value={active}          sub={`${projects.length} total`} icon="📁" />
-        <Metric label="Overloaded Staff"  value={overloaded}      sub="Requires attention"   icon="⚠️" color={overloaded > 0 ? 'var(--red)' : 'var(--green)'} />
-        <Metric label="Available Staff"   value={available}       sub="Capacity available"   icon="✅" color="var(--green)" />
+      <div className="grid-4" style={{ marginBottom: '16px' }}>
+        {[
+          { label: 'Total Staff',      value: fm.length,   sub: 'Across teams',      color: 'var(--purple-light)', accent: 'purple', icon: '👥' },
+          { label: 'Active Projects',  value: active,      sub: `${fp.length} total`, color: 'var(--blue)',         accent: 'blue',   icon: '📁' },
+          { label: 'Overloaded',       value: overloaded,  sub: 'Need attention',    color: overloaded>0?'var(--red)':'var(--green)', accent: 'red', icon: '⚠️' },
+          { label: 'Avg Utilization',  value: avgCap+'%',  sub: 'Team average',      color: avgCap>80?'var(--yellow)':'var(--green)', accent: 'yellow', icon: '📊' },
+        ].map((m,i) => (
+          <div key={m.label} className={`metric-card ${m.accent} card-animate`} style={{ animationDelay: `${i*0.07}s` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{m.label}</div>
+              <span style={{ fontSize: '20px' }}>{m.icon}</span>
+            </div>
+            <div className="count-up" style={{ fontSize: '28px', fontWeight: '800', color: m.color, fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>{m.value}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{m.sub}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Charts row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '16px', marginBottom: '16px' }}>
+      {/* Quick actions — Fieldex style */}
+      {role === 'manager' && (
+        <div className="quick-actions">
+          {QUICK_ACTIONS.map(a => (
+            <button key={a.label} className="quick-action-btn" onClick={a.action}>
+              <span className="quick-action-icon">{a.icon}</span>
+              <span>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
-        {/* Workload chart */}
-        <Card>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      {/* Charts row */}
+      <div className="grid-3-2" style={{ marginBottom: '16px' }}>
+        <div className="card card-animate" style={{ animationDelay: '0.3s' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <div>
-              <div style={{ fontSize: '14px', fontWeight: '600' }}>Workload Distribution</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>Current utilization across all staff</div>
+              <div className="card-title" style={{ marginBottom: '2px' }}>Workload Distribution</div>
+              <div className="card-sub">Current utilization across staff</div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', fontSize: '11px' }}>
-              {[['var(--green)', 'Available'], ['var(--yellow)', 'Warning'], ['var(--red)', 'Over']].map(([c, l]) => (
-                <div key={l} style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-dim)' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {[['var(--green)','OK'],['var(--yellow)','High'],['var(--red)','Over']].map(([c,l]) => (
+                <div key={l} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-dim)' }}>
                   <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: c }} />{l}
                 </div>
               ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} barSize={32}>
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 12 }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} domain={[0, 120]} tickFormatter={v => v + '%'} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {chartData.map((entry, i) => (
-                  <Cell key={i} fill={getBarColor(entry.value)} />
-                ))}
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={chartData} barSize={28} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 10 }} tickFormatter={v => v+'%'} domain={[0, 120]} />
+              <Tooltip content={<CT />} cursor={{ fill: 'rgba(255,255,255,0.02)', radius: 4 }} />
+              <Bar dataKey="value" name="Allocated" radius={[6,6,0,0]}>
+                {chartData.map((e,i) => <Cell key={i} fill={getColor(e.value)} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          {/* 90% line indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-            <div style={{ height: '1px', flex: 1, background: 'var(--red)', opacity: 0.3 }} />
-            <span style={{ fontSize: '11px', color: 'var(--red)', opacity: 0.7 }}>90% threshold</span>
-          </div>
-        </Card>
+        </div>
 
-        {/* Upcoming deadlines */}
-        <Card>
-          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>Upcoming Deadlines</div>
-          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '16px' }}>Projects ending within 30 days</div>
-          {upcoming.map(p => {
-            const days = Math.ceil((new Date(p.deadline) - new Date()) / (1000 * 60 * 60 * 24));
-            const urgent = days <= 7;
-            return (
-              <div key={p.id} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '12px', background: 'var(--bg-hover)',
-                borderRadius: 'var(--radius-md)', marginBottom: '8px',
-                border: `1px solid ${urgent ? 'var(--red)' : 'var(--border)'}`,
-              }}>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: '500' }}>{p.name}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>{p.client}</div>
-                </div>
-                <div style={{
-                  fontSize: '12px', fontWeight: '600', padding: '4px 10px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: urgent ? 'var(--red-dim)' : 'var(--bg-card)',
-                  color: urgent ? 'var(--red)' : 'var(--text-dim)'
-                }}>
-                  {days > 0 ? `${days}d` : 'Today'}
-                </div>
-              </div>
-            );
-          })}
-          {upcoming.length === 0 && (
-            <div style={{ color: 'var(--text-dim)', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No upcoming deadlines</div>
-          )}
-        </Card>
+        <div className="card card-animate" style={{ animationDelay: '0.35s' }}>
+          <div className="card-title">Upcoming Deadlines</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {fp.filter(p => p.deadline && p.status !== 'Completed')
+              .sort((a,b) => new Date(a.deadline) - new Date(b.deadline))
+              .slice(0,4)
+              .map(p => {
+                const days = Math.ceil((new Date(p.deadline) - new Date()) / (1000*60*60*24));
+                const urgent = days <= 7;
+                return (
+                  <div key={p.id} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '9px 11px', background: 'var(--bg-hover)',
+                    borderRadius: 'var(--radius-md)',
+                    border: `1px solid ${urgent ? 'rgba(239,68,68,0.3)' : 'var(--border)'}`,
+                    transition: 'var(--transition)'
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: '1px' }}>{p.client}</div>
+                    </div>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: urgent ? 'var(--red)' : 'var(--text-dim)', flexShrink: 0, marginLeft: '8px' }}>
+                      {days <= 0 ? 'Overdue' : `${days}d`}
+                    </div>
+                  </div>
+                );
+              })}
+            {fp.filter(p => p.deadline && p.status !== 'Completed').length === 0 && (
+              <div style={{ color: 'var(--text-dim)', fontSize: '12px', textAlign: 'center', padding: '20px' }}>No upcoming deadlines ✅</div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Bottom row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+      <div className="grid-2">
 
-        {/* Task summary */}
-        <Card>
-          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '16px' }}>Task Overview</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        {/* Utilization trend */}
+        <div className="card card-animate" style={{ animationDelay: '0.4s' }}>
+          <div className="card-title">Utilization Trend</div>
+          <div className="card-sub">This week's capacity usage</div>
+          <ResponsiveContainer width="100%" height={130}>
+            <AreaChart data={trendData}>
+              <defs>
+                <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#7c3aed" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#7c3aed" stopOpacity={0}   />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 10 }} tickFormatter={v => v+'%'} domain={[0, 100]} />
+              <Tooltip content={<CT />} cursor={{ stroke: 'var(--border-light)' }} />
+              <Area type="monotone" dataKey="util" name="Utilization" stroke="var(--purple)" fill="url(#trendGrad)" strokeWidth={2.5} dot={{ fill: 'var(--purple)', r: 3 }} unit="%" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Summary stats */}
+        <div className="card card-animate" style={{ animationDelay: '0.45s' }}>
+          <div className="card-title">Today's Summary</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {[
-              { label: 'Pending',     value: pendingTasks,                               color: 'var(--yellow)' },
-              { label: 'In Progress', value: inProgress,                                 color: 'var(--blue)'   },
-              { label: 'Completed',   value: tasks.filter(t => t.status === 'Completed').length, color: 'var(--green)'  },
-              { label: 'Blocked',     value: tasks.filter(t => t.status === 'Blocked').length,   color: 'var(--red)'    },
-            ].map(t => (
-              <div key={t.label} style={{
-                padding: '14px', background: 'var(--bg-hover)',
-                borderRadius: 'var(--radius-md)', border: '1px solid var(--border)'
-              }}>
-                <div style={{ fontSize: '22px', fontWeight: '700', color: t.color, fontFamily: 'var(--font-mono)' }}>{t.value}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '4px' }}>{t.label}</div>
+              { label: 'Pending Tasks',    value: tasks.filter(t=>t.status==='Pending').length,     color: 'var(--yellow)', icon: '⏳' },
+              { label: 'In Progress',      value: tasks.filter(t=>t.status==='In Progress').length, color: 'var(--blue)',   icon: '🔄' },
+              { label: 'Completed',        value: tasks.filter(t=>t.status==='Completed').length,   color: 'var(--green)',  icon: '✅' },
+              { label: 'Pending Requests', value: pending,                                          color: 'var(--orange)', icon: '📬' },
+              { label: 'Available Staff',  value: available,                                        color: 'var(--purple-light)', icon: '🟢' },
+            ].map(s => (
+              <div key={s.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'var(--bg-hover)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '14px' }}>{s.icon}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{s.label}</span>
+                </div>
+                <span style={{ fontSize: '16px', fontWeight: '700', color: s.color, fontFamily: 'var(--font-mono)' }}>{s.value}</span>
               </div>
             ))}
           </div>
-        </Card>
-
-        {/* Active projects */}
-        <Card>
-          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '16px' }}>Active Projects</div>
-          {projects.slice(0, 4).map(p => {
-            const colors = { Active: 'var(--green)', 'In Review': 'var(--yellow)', Planning: 'var(--purple-light)', Completed: 'var(--text-dim)' };
-            return (
-              <div key={p.id} style={{
-                display: 'flex', alignItems: 'center', gap: '10px',
-                padding: '8px 0', borderBottom: '1px solid var(--border)'
-              }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: colors[p.status], flexShrink: 0 }} />
-                <div style={{ flex: 1, fontSize: '13px', fontWeight: '500' }}>{p.name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{p.client}</div>
-                <span style={{
-                  fontSize: '10px', padding: '2px 8px', borderRadius: '20px',
-                  background: p.status === 'Active' ? 'var(--green-dim)' : p.status === 'In Review' ? 'var(--yellow-dim)' : 'var(--purple-dim)',
-                  color: colors[p.status], fontWeight: '500'
-                }}>{p.status}</span>
-              </div>
-            );
-          })}
-        </Card>
+        </div>
       </div>
     </div>
   );

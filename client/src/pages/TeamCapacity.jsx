@@ -22,7 +22,7 @@ export default function TeamCapacity({ role }) {
   });
 
   return (
-    <div>
+    <div className="page">
       <div style={{ marginBottom: '28px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>Team Capacity</h1>
         <p style={{ color: 'var(--text-dim)', fontSize: '14px' }}>Manage and forecast resource utilization across all squads.</p>
