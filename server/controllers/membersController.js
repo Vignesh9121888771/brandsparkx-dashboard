@@ -56,13 +56,15 @@ const updateMember = async (req, res, next) => {
        WHERE id=$8 RETURNING *`,
       [name, email, role, team_id, region, skills || '', capacity_percent || 100, req.params.id]
     );
+    if (!result.rows[0]) return res.status(404).json({ success: false, message: "Member not found" });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { next(err); }
 };
 
 const deleteMember = async (req, res, next) => {
   try {
-    await db.query('DELETE FROM members WHERE id=$1', [req.params.id]);
+    const result = await db.query('DELETE FROM members WHERE id=$1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: "Member not found" });
     res.json({ success: true, message: 'Member deleted' });
   } catch (err) { next(err); }
 };

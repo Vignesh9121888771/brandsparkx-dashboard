@@ -22,13 +22,24 @@ export default function Dashboard({ role, user, search, defaultRegion, onNavigat
   const [tasks,    setTasks]    = useState([]);
   const [requests, setRequests] = useState([]);
   const [region,   setRegion]   = useState(defaultRegion || 'All');
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState(null);
 
   useEffect(() => {
-    getMembers().then(r  => setMembers(r.data.data));
-    getProjects().then(r => setProjects(r.data.data));
-    getCapacity().then(r => setCapacity(r.data.data));
-    getTasks().then(r    => setTasks(r.data.data));
-    getRequests().then(r => setRequests(r.data.data));
+    Promise.all([getMembers(), getProjects(), getCapacity(), getTasks(), getRequests()])
+      .then(([memRes, projRes, capRes, taskRes, reqRes]) => {
+        setMembers(memRes.data.data || []);
+        setProjects(projRes.data.data || []);
+        setCapacity(capRes.data.data || []);
+        setTasks(taskRes.data.data || []);
+        setRequests(reqRes.data.data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Dashboard fetch error:", err);
+        setError("Failed to load dashboard data.");
+        setLoading(false);
+      });
   }, []);
 
   const now   = new Date();
@@ -37,18 +48,18 @@ export default function Dashboard({ role, user, search, defaultRegion, onNavigat
 
   const fp = useMemo(() => projects.filter(p => {
     const mr = region === 'All' || p.region === region;
-    const ms = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase());
+    const ms = !search || p.name?.toLowerCase().includes(search.toLowerCase()) || p.client?.toLowerCase().includes(search.toLowerCase());
     return mr && ms;
   }), [projects, region, search]);
 
   const fm = useMemo(() => members.filter(m =>
-    !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.role.toLowerCase().includes(search.toLowerCase())
+    !search || m.name?.toLowerCase().includes(search.toLowerCase()) || m.role?.toLowerCase().includes(search.toLowerCase())
   ), [members, search]);
 
   const active     = fp.filter(p => p.status === 'Active').length;
-  const overloaded = capacity.filter(c => parseInt(c.allocated_percent) > 90).length;
-  const available  = capacity.filter(c => parseInt(c.allocated_percent) < 50).length;
-  const avgCap     = capacity.length ? Math.round(capacity.reduce((s,c) => s + parseInt(c.allocated_percent), 0) / capacity.length) : 0;
+  const overloaded = capacity.filter(c => (parseInt(c.allocated_percent) || 0) > 90).length;
+  const available  = capacity.filter(c => (parseInt(c.allocated_percent) || 0) < 50).length;
+  const avgCap     = capacity.length ? Math.round(capacity.reduce((s,c) => s + (parseInt(c.allocated_percent) || 0), 0) / capacity.length) : 0;
   const pending    = requests.filter(r => r.status === 'Pending').length;
 
   const urgentProjects = fp.filter(p => {
@@ -58,33 +69,30 @@ export default function Dashboard({ role, user, search, defaultRegion, onNavigat
   });
 
   const chartData = capacity.slice(0,8).map(m => ({
-    name: m.name.split(' ')[0],
-    value: parseInt(m.allocated_percent),
+    name: m.name?.split(' ')[0] || '?',
+    value: parseInt(m.allocated_percent) || 0
   }));
 
   const trendData = [
-    { day: 'Mon', util: 68 }, { day: 'Tue', util: 74 },
-    { day: 'Wed', util: 80 }, { day: 'Thu', util: 77 },
-    { day: 'Fri', util: avgCap }, { day: 'Sat', util: avgCap - 5 },
+    { day: 'Mon', util: 65 }, { day: 'Tue', util: 72 }, { day: 'Wed', util: 68 },
+    { day: 'Thu', util: 75 }, { day: 'Fri', util: 70 }, { day: 'Sat', util: 40 }, { day: 'Sun', util: 35 },
   ];
 
-  const getColor = v => v > 90 ? 'var(--red)' : v > 70 ? 'var(--yellow)' : 'var(--green)';
-  const statusC  = { Active: 'var(--green)', 'In Review': 'var(--yellow)', Planning: 'var(--purple-light)', Completed: 'var(--text-dim)' };
-  const statusBg = { Active: 'var(--green-dim)', 'In Review': 'var(--yellow-dim)', Planning: 'var(--purple-dim)', Completed: 'var(--bg-hover)' };
+  const getColor = (v) => v > 90 ? 'var(--red)' : v > 70 ? 'var(--yellow)' : 'var(--green)';
 
   const QUICK_ACTIONS = [
-    { icon: '➕', label: 'New Project',  action: () => onNavigate('projects')  },
-    { icon: '👤', label: 'Add Member',   action: () => onNavigate('manager')   },
-    { icon: '📋', label: 'Assign Task',  action: () => onNavigate('manager')   },
-    { icon: '📊', label: 'View Reports', action: () => onNavigate('analytics') },
-    { icon: '📅', label: 'Calendar',     action: () => onNavigate('calendar')  },
-    { icon: '◷',  label: 'Requests',     action: () => onNavigate('requests')  },
+    { label: 'Add Project', icon: '➕', action: () => onNavigate?.('Projects') },
+    { label: 'New Request', icon: '📝', action: () => onNavigate?.('Requests') },
+    { label: 'Team Load',  icon: '⚖️', action: () => onNavigate?.('Team Capacity') },
+    { label: 'Reports',    icon: '📈', action: () => onNavigate?.('Analytics') },
   ];
+
+  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading dashboard...</div>;
+  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
 
   return (
     <div className="page">
-
-      {/* Deadline alerts */}
+      {/* Alert Banner */}
       {urgentProjects.map(p => {
         const days = Math.ceil((new Date(p.deadline) - new Date()) / (1000*60*60*24));
         return (
@@ -157,16 +165,18 @@ export default function Dashboard({ role, user, search, defaultRegion, onNavigat
               ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={chartData} barSize={28} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 10 }} tickFormatter={v => v+'%'} domain={[0, 120]} />
-              <Tooltip content={<CT />} cursor={{ fill: 'rgba(255,255,255,0.02)', radius: 4 }} />
-              <Bar dataKey="value" name="Allocated" radius={[6,6,0,0]}>
-                {chartData.map((e,i) => <Cell key={i} fill={getColor(e.value)} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartData} barSize={28} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 11 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-dim)', fontSize: 10 }} tickFormatter={v => v+'%'} domain={[0, 120]} />
+                <Tooltip content={<CT />} cursor={{ fill: 'rgba(255,255,255,0.02)', radius: 4 }} />
+                <Bar dataKey="value" name="Allocated" radius={[6,6,0,0]}>
+                  {chartData.map((e,i) => <Cell key={i} fill={getColor(e.value)} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)' }}>No data available</div>}
         </div>
 
         <div className="card card-animate" style={{ animationDelay: '0.35s' }}>

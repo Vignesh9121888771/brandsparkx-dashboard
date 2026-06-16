@@ -20,6 +20,7 @@ API.interceptors.response.use(
       localStorage.removeItem('bsx_user');
       window.location.href = '/';
     }
+    console.error("API Error:", err.response?.data?.message || err.message);
     return Promise.reject(err);
   }
 );

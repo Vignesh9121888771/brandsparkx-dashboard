@@ -37,13 +37,15 @@ const updateTask = async (req, res, next) => {
        WHERE id=$7 RETURNING *`,
       [title, status, priority, assigned_to, due_date, actual_hours, req.params.id]
     );
+    if (!result.rows[0]) return res.status(404).json({ success: false, message: "Task not found" });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { next(err); }
 };
 
 const deleteTask = async (req, res, next) => {
   try {
-    await db.query('DELETE FROM tasks WHERE id=$1', [req.params.id]);
+    const result = await db.query('DELETE FROM tasks WHERE id=$1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: "Task not found" });
     res.json({ success: true, message: 'Task deleted' });
   } catch (err) { next(err); }
 };

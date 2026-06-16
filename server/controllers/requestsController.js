@@ -32,6 +32,7 @@ const updateRequestStatus = async (req, res, next) => {
       'UPDATE requests SET status=$1, manager_note=$2 WHERE id=$3 RETURNING *',
       [status, manager_note, req.params.id]
     );
+    if (!result.rows[0]) return res.status(404).json({ success: false, message: "Request not found" });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { next(err); }
 };

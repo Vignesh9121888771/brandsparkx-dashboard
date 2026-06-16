@@ -92,7 +92,7 @@ export default function App() {
           return days <= 7 && days >= 0;
         });
         setAlerts(urgent);
-      } catch {}
+      } catch (e) { console.error(e); }
     };
     check();
     const iv = setInterval(check, 60000);

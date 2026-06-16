@@ -21,7 +21,8 @@ const createTeam = async (req, res, next) => {
 
 const deleteTeam = async (req, res, next) => {
   try {
-    await db.query('DELETE FROM teams WHERE id = $1', [req.params.id]);
+    const result = await db.query('DELETE FROM teams WHERE id = $1', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: "Team not found" });
     res.json({ success: true, message: 'Team deleted' });
   } catch (err) { next(err); }
 };
