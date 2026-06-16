@@ -161,20 +161,24 @@ export default function App() {
 
         {/* Logo + Toggle row */}
         <div className="sidebar-header">
-          {!collapsed && (
-            <img
-              src="https://res.cloudinary.com/dosxhopuv/image/upload/w_400,h_120,c_fit,q_100,dpr_2.0/v1781443305/brandspark_logo_hq_xqwxdf.png"
-              alt="BrandSparkX"
-              style={{
-                height: '50px',
-                width: 'auto',
-                objectFit: 'contain',
-                maxWidth: '200px',
-                flex: 1,
-                imageRendering: 'crisp-edges',
-                animation: 'slideIn 0.2s ease',
-              }}
-            />
+           {!collapsed && (
+            <div style={{
+              flex: 1,
+              animation: 'slideIn 0.2s ease',
+            }}>
+              <div style={{
+                fontSize: '16px',
+                fontWeight: '900',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                lineHeight: 1,
+                fontFamily: 'Inter, sans-serif',
+              }}>
+                <span style={{ color: '#f1f1f5' }}>BRAND</span>
+                <span style={{ color: '#e11d48' }}>SPARK</span>
+                <span style={{ color: '#e11d48', fontSize: '18px', fontWeight: '900' }}>✕</span>
+              </div>
+            </div>
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}
