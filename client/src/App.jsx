@@ -443,7 +443,7 @@ export default function App() {
 
         {/* Page content */}
         <div className="page-content">
-          <div key={page}>
+          <div>
             {pages[page] || pages.dashboard}
           </div>
         </div>
