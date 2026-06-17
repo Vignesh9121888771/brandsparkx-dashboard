@@ -1,18 +1,15 @@
-﻿const express = require('express');
-const router  = express.Router();
-const auth    = require('../middleware/auth');
-const {
-  getAllTasks, createTask, updateTask, deleteTask,
-  submitProgressUpdate, getPendingUpdates, reviewProgressUpdate, getProgressHistory
-} = require('../controllers/tasksController');
+const express = require('express');
+const router = express.Router();
+const auth = require('../middleware/auth');
+const ctrl = require('../controllers/tasksController');
 
-router.get('/progress/pending',           auth, getPendingUpdates);
-router.put('/progress/:update_id/review', auth, reviewProgressUpdate);
-router.get('/',                           auth, getAllTasks);
-router.post('/',                          auth, createTask);
-router.put('/:id',                        auth, updateTask);
-router.delete('/:id',                     auth, deleteTask);
-router.post('/:id/progress',              auth, submitProgressUpdate);
-router.get('/:id/progress/history',       auth, getProgressHistory);
+router.get('/progress/pending', auth, ctrl.getPendingUpdates);
+router.put('/progress/:update_id/review', auth, ctrl.reviewProgressUpdate);
+router.get('/', auth, ctrl.getAllTasks);
+router.post('/', auth, ctrl.createTask);
+router.put('/:id', auth, ctrl.updateTask);
+router.delete('/:id', auth, ctrl.deleteTask);
+router.post('/:id/progress', auth, ctrl.submitProgressUpdate);
+router.get('/:id/progress/history', auth, ctrl.getProgressHistory);
 
 module.exports = router;
