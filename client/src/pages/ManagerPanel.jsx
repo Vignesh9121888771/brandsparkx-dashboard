@@ -5,7 +5,19 @@ import {
   reviewProgressUpdate, createBulkMembers
 } from '../services/api';
 
-const priorityColors = { Low: 'var(--green)', Medium: 'var(--yellow)', High: 'var(--orange)', Critical: 'var(--red)' };
+const PRIORITY_COLORS = {
+  Low: 'var(--green)',
+  Medium: 'var(--yellow)',
+  High: 'var(--orange)',
+  Critical: 'var(--red)'
+};
+
+const STATUS_COLORS = {
+  Pending: 'var(--yellow)',
+  Approved: 'var(--green)',
+  Rejected: 'var(--red)'
+};
+
 const EMPTY_MEMBER = { name: '', email: '', role: '', region: 'India', skills: '' };
 
 export default function ManagerPanel({ user }) {
@@ -19,7 +31,11 @@ export default function ManagerPanel({ user }) {
   const [reviewNote, setReviewNote] = useState({});
   const [reviewing, setReviewing] = useState({});
   const [suggestions, setSuggestions] = useState([]);
-  const [taskForm, setTaskForm] = useState({ title: '', assigned_to: '', project_id: '', priority: 'Medium', due_date: '', estimated_hours: '', description: '' });
+  const [taskForm, setTaskForm] = useState({
+    title: '', assigned_to: '', project_id: '',
+    priority: 'Medium', due_date: '', estimated_hours: '',
+    description: ''
+  });
   const [bulkMembers, setBulkMembers] = useState([{ ...EMPTY_MEMBER }]);
   const [bulkStatus, setBulkStatus] = useState('');
   const [aiQuery, setAiQuery] = useState({ task_title: '', task_description: '', required_role: '' });
@@ -66,7 +82,10 @@ export default function ManagerPanel({ user }) {
 
   const handleRequest = async (id, status) => {
     try {
-      await updateRequest(id, { status });
+      await updateRequest(id, {
+        status,
+        manager_note: `${status} by manager`
+      });
       loadAll();
     } catch (e) {
       console.error(e);
@@ -77,9 +96,13 @@ export default function ManagerPanel({ user }) {
   const handleReview = async (update_id, action) => {
     try {
       setReviewing(p => ({ ...p, [update_id]: true }));
-      await reviewProgressUpdate(update_id, { action, manager_note: reviewNote[update_id] || '' });
+      await reviewProgressUpdate(update_id, {
+        action,
+        manager_note: reviewNote[update_id] || ''
+      });
       await loadAll();
     } catch (err) {
+      console.error('Review error:', err);
       alert(err.response?.data?.message || 'Failed to review update');
     } finally {
       setReviewing(p => ({ ...p, [update_id]: false }));
@@ -90,7 +113,11 @@ export default function ManagerPanel({ user }) {
     if (!taskForm.title || !taskForm.assigned_to) return alert('Title and assignee are required');
     try {
       await createTask(taskForm);
-      setTaskForm({ title: '', assigned_to: '', project_id: '', priority: 'Medium', due_date: '', estimated_hours: '', description: '' });
+      setTaskForm({
+        title: '', assigned_to: '', project_id: '',
+        priority: 'Medium', due_date: '', estimated_hours: '',
+        description: ''
+      });
       loadAll();
       alert('Task assigned successfully');
     } catch (e) {
@@ -102,6 +129,7 @@ export default function ManagerPanel({ user }) {
   const askAI = async () => {
     if (!aiQuery.task_title) return alert('Enter a task title');
     setAiLoading(true);
+    setAiResult('');
     try {
       const res = await getAISuggestion(aiQuery);
       setAiResult(res.data.suggestion);
@@ -127,7 +155,8 @@ export default function ManagerPanel({ user }) {
       setBulkMembers([{ ...EMPTY_MEMBER }]);
       loadAll();
     } catch (e) {
-      setBulkStatus('error:Failed to add members');
+      console.error('Bulk add error:', e);
+      setBulkStatus(`error:${e.response?.data?.message || 'Failed to add members'}`);
     }
   };
 
@@ -162,7 +191,7 @@ export default function ManagerPanel({ user }) {
           <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>Manager Control Panel</h1>
           <p style={{ color: 'var(--text-dim)', fontSize: '14px' }}>Global oversight of requests, task assignments, and AI-assisted resource planning.</p>
         </div>
-        <button className="btn btn-ghost" onClick={exportCSV}>📊 Export Capacity CSV</button>
+        <button className="btn btn-ghost" style={{ fontSize:'11px' }} onClick={exportCSV}>📊 Export Capacity CSV</button>
       </div>
 
       {/* Tabs */}
@@ -180,21 +209,40 @@ export default function ManagerPanel({ user }) {
       {/* REQUESTS */}
       {tab === 'requests' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {requests.filter(r => r.status === 'Pending').map(r => (
-            <div key={r.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px 20px' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '14px', fontWeight: '600' }}>{r.title || 'Untitled'} — <span style={{ color: 'var(--purple-light)' }}>{r.type || 'Other'}</span></div>
-                <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>{r.member_name || 'Unknown'} · {r.member_role || 'N/A'} · {r.description?.slice(0, 80) || 'No description'}...</div>
+          {requests.length === 0 && (
+            <div className="card" style={{ textAlign:'center', padding:'40px', color:'var(--text-dim)' }}>
+              ✅ All clear — no requests found
+            </div>
+          )}
+          {requests.map(r => (
+            <div key={r.id} className="card" style={{ padding: '16px 20px' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'10px' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '600' }}>{r.title || 'Untitled'} — <span style={{ color: 'var(--purple-light)' }}>{r.type || 'Other'}</span></div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                    {r.member_name || 'Unknown'} · {r.member_role || 'N/A'} · {new Date(r.created_at).toLocaleDateString('en-IN')}
+                  </div>
+                </div>
+                <span className="badge" style={{
+                  background: r.status==='Pending'?'var(--yellow-dim)':r.status==='Approved'?'var(--green-dim)':'var(--red-dim)',
+                  color: STATUS_COLORS[r.status] || 'var(--text-dim)'
+                }}>{r.status}</span>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn btn-sm" style={{ background: 'var(--green-dim)', color: 'var(--green)' }} onClick={() => handleRequest(r.id, 'Approved')}>Approve</button>
-                <button className="btn btn-sm" style={{ background: 'var(--red-dim)', color: 'var(--red)' }} onClick={() => handleRequest(r.id, 'Rejected')}>Reject</button>
-              </div>
+
+              {r.description && (
+                <div style={{ fontSize:'12px', color:'var(--text-secondary)', padding:'10px', background:'var(--bg-hover)', borderRadius:'8px', marginBottom:'12px' }}>
+                  {r.description}
+                </div>
+              )}
+
+              {r.status === 'Pending' && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-sm" style={{ background: 'var(--green-dim)', color: 'var(--green)' }} onClick={() => handleRequest(r.id, 'Approved')}>Approve</button>
+                  <button className="btn btn-sm" style={{ background: 'var(--red-dim)', color: 'var(--red)' }} onClick={() => handleRequest(r.id, 'Rejected')}>Reject</button>
+                </div>
+              )}
             </div>
           ))}
-          {requests.filter(r => r.status === 'Pending').length === 0 && (
-            <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '40px', background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border)' }}>✅ All requests have been processed</div>
-          )}
         </div>
       )}
 
@@ -401,7 +449,7 @@ export default function ManagerPanel({ user }) {
                 <div key={t.id} style={{ padding: '10px', background: 'var(--bg-hover)', borderRadius: '8px', border: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
                     <div style={{ fontSize: '12px', fontWeight: '500' }}>{t.title || 'Untitled'}</div>
-                    <span style={{ fontSize: '10px', color: priorityColors[t.priority] || priorityColors.Medium, fontWeight: '600' }}>{t.priority || 'Medium'}</span>
+                    <span style={{ fontSize: '10px', color: PRIORITY_COLORS[t.priority] || PRIORITY_COLORS.Medium, fontWeight: '600' }}>{t.priority || 'Medium'}</span>
                   </div>
                   <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px' }}>{t.assignee_name} · {t.project_name || 'No project'}</div>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
@@ -452,18 +500,18 @@ export default function ManagerPanel({ user }) {
                   const riskColor = { Critical: 'var(--red)', High: 'var(--yellow)', Medium: 'var(--blue)', Low: 'var(--green)' };
                   const canComplete = !(days <= 7 && progress < 50);
                   return (
-                    <div key={p.id} style={{ padding: '10px 12px', background: 'var(--bg-hover)', borderRadius: '8px', border: `1px solid ${!canComplete ? 'var(--red)' : 'var(--border)'}` }}>
+                    <div key={p.id} style={{ padding: '10px 12px', background: 'var(--bg-hover)', borderRadius: '8px', border: `1px solid ${!canComplete ? 'rgba(239,68,68,0.3)' : 'var(--border)'}` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <div style={{ fontSize: '12px', fontWeight: '500' }}>{p.name || 'Untitled'}</div>
                         <span className="badge" style={{ background: (riskColor[risk] || 'var(--text-dim)') + '22', color: riskColor[risk] || 'var(--text-dim)' }}>{risk}</span>
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px' }}>{days}d left · {progress}% done · {p.client || 'Unknown Client'}</div>
-                      <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden', marginBottom: '6px' }}>
-                        <div style={{ height: '100%', width: `${progress}%`, background: progress >= 75 ? 'var(--green)' : progress >= 40 ? 'var(--yellow)' : 'var(--red)', borderRadius: '2px' }} />
+                      <div className="progress-bar" style={{ marginBottom: '6px' }}>
+                        <div className="progress-fill" style={{ width: `${progress}%`, background: progress >= 75 ? 'var(--green)' : progress >= 40 ? 'var(--yellow)' : 'var(--red)' }} />
                       </div>
                       {!canComplete && (
                         <div style={{ fontSize: '11px', color: 'var(--red)' }}>
-                          ⚠️ At current pace, this project may not complete by deadline. Consider adding resources.
+                          ⚠️ At current pace, this project may not complete by deadline.
                         </div>
                       )}
                     </div>
