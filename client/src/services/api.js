@@ -43,6 +43,7 @@ export const getRequests    = () => API.get('/requests');
 export const getNotifications = () => API.get('/notifications');
 
 export const createMember     = (data) => API.post('/members', data);
+export const createBulkMembers = (data) => API.post('/members/bulk', data);
 export const createProject    = (data) => API.post('/projects', data);
 export const createAllocation = (data) => API.post('/allocations', data);
 export const createTask       = (data) => API.post('/tasks', data);
@@ -54,9 +55,13 @@ export const updateRequest    = (id, data) => API.put(`/requests/${id}`, data);
 export const updateProject    = (id, data) => API.put(`/projects/${id}`, data);
 export const updateMember     = (id, data) => API.put(`/members/${id}`, data);
 
-export const deleteAllocation = (id) => API.delete(`/allocations/${id}`);
 export const deleteTask       = (id) => API.delete(`/tasks/${id}`);
+export const deleteAllocation = (id) => API.delete(`/allocations/${id}`);
 export const deleteMember     = (id) => API.delete(`/members/${id}`);
 export const deleteProject    = (id) => API.delete(`/projects/${id}`);
+
+// Progress Tracking
+export const getPendingProgressUpdates = () => API.get('/tasks/progress/pending');
+export const reviewProgressUpdate = (id, data) => API.put(`/tasks/progress/${id}/review`, data);
 
 export const getAISuggestion  = (data) => API.post('/ai/suggest', data);
