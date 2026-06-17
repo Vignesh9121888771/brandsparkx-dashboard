@@ -8,7 +8,7 @@ import {
 const PRIORITY_COLORS = {
   Low: 'var(--green)',
   Medium: 'var(--yellow)',
-  High: 'var(--orange)',
+  High: 'var(--red)',
   Critical: 'var(--red)'
 };
 
@@ -44,8 +44,7 @@ export default function ManagerPanel({ user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadAll = async () => {
-    setLoading(true);
+  const load = async () => {
     try {
       const [reqRes, taskRes, memRes, projRes, capRes, updRes] = await Promise.all([
         getRequests(), getTasks(), getMembers(), getProjects(), getCapacity(), getPendingProgressUpdates()
@@ -67,26 +66,23 @@ export default function ManagerPanel({ user }) {
         const match = free[0];
         return match
           ? `${o.name} is overloaded (${o.allocated_percent}%) — consider shifting work to ${match.name} (${match.allocated_percent}% allocated)`
-          : `${o.name} is over capacity (${o.allocated_percent}%). Consider offloading some tasks.`;
-      });
+          : null;
+      }).filter(Boolean);
       setSuggestions(sug);
       setLoading(false);
     } catch (err) {
-      console.error("Manager panel fetch error:", err);
+      console.error("ManagerPanel load error:", err);
       setError("Failed to load manager data.");
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { load(); }, []);
 
   const handleRequest = async (id, status) => {
     try {
-      await updateRequest(id, {
-        status,
-        manager_note: `${status} by manager`
-      });
-      loadAll();
+      await updateRequest(id, { status, manager_note: `${status} by manager` });
+      load();
     } catch (e) {
       console.error(e);
       alert("Failed to update request.");
@@ -96,13 +92,9 @@ export default function ManagerPanel({ user }) {
   const handleReview = async (update_id, action) => {
     try {
       setReviewing(p => ({ ...p, [update_id]: true }));
-      await reviewProgressUpdate(update_id, {
-        action,
-        manager_note: reviewNote[update_id] || ''
-      });
-      await loadAll();
+      await reviewProgressUpdate(update_id, { action, manager_note: reviewNote[update_id] || '' });
+      await load();
     } catch (err) {
-      console.error('Review error:', err);
       alert(err.response?.data?.message || 'Failed to review update');
     } finally {
       setReviewing(p => ({ ...p, [update_id]: false }));
@@ -113,12 +105,8 @@ export default function ManagerPanel({ user }) {
     if (!taskForm.title || !taskForm.assigned_to) return alert('Title and assignee are required');
     try {
       await createTask(taskForm);
-      setTaskForm({
-        title: '', assigned_to: '', project_id: '',
-        priority: 'Medium', due_date: '', estimated_hours: '',
-        description: ''
-      });
-      loadAll();
+      setTaskForm({ title: '', assigned_to: '', project_id: '', priority: 'Medium', due_date: '', estimated_hours: '', description: '' });
+      load();
       alert('Task assigned successfully');
     } catch (e) {
       console.error(e);
@@ -127,15 +115,13 @@ export default function ManagerPanel({ user }) {
   };
 
   const askAI = async () => {
-    if (!aiQuery.task_title) return alert('Enter a task title');
-    setAiLoading(true);
-    setAiResult('');
+    if (!aiQuery.task_title) return alert('Enter task title');
+    setAiLoading(true); setAiResult('');
     try {
       const res = await getAISuggestion(aiQuery);
       setAiResult(res.data.suggestion);
     } catch (e) {
-      console.error(e);
-      setAiResult("AI service currently unavailable. Please try again later.");
+      setAiResult('Failed. Check Gemini API key in .env');
     } finally {
       setAiLoading(false);
     }
@@ -153,9 +139,8 @@ export default function ManagerPanel({ user }) {
       const res = await createBulkMembers({ members: valid });
       setBulkStatus(`success:Added ${res.data.count} member(s) successfully`);
       setBulkMembers([{ ...EMPTY_MEMBER }]);
-      loadAll();
+      load();
     } catch (e) {
-      console.error('Bulk add error:', e);
       setBulkStatus(`error:${e.response?.data?.message || 'Failed to add members'}`);
     }
   };
@@ -186,12 +171,12 @@ export default function ManagerPanel({ user }) {
 
   return (
     <div className="page">
-      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>Manager Control Panel</h1>
-          <p style={{ color: 'var(--text-dim)', fontSize: '14px' }}>Global oversight of requests, task assignments, and AI-assisted resource planning.</p>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'14px' }}>
+        <div className="page-header" style={{ marginBottom:0 }}>
+          <h1>Manager Panel</h1>
+          <p>Approve requests, assign tasks, manage team</p>
         </div>
-        <button className="btn btn-ghost" style={{ fontSize:'11px' }} onClick={exportCSV}>📊 Export Capacity CSV</button>
+        <button className="btn btn-ghost" style={{ fontSize:'11px' }} onClick={exportCSV}>⬇ Export CSV</button>
       </div>
 
       {/* Tabs */}
@@ -208,37 +193,22 @@ export default function ManagerPanel({ user }) {
 
       {/* REQUESTS */}
       {tab === 'requests' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {requests.length === 0 && (
-            <div className="card" style={{ textAlign:'center', padding:'40px', color:'var(--text-dim)' }}>
-              ✅ All clear — no requests found
-            </div>
-          )}
+        <div style={{ display:'flex', flexDirection:'column', gap:'8px', maxHeight:'calc(100vh - 200px)', overflowY:'auto' }}>
+          {requests.length === 0 && <div className="card" style={{ textAlign:'center', color:'var(--text-dim)', fontSize:'13px', padding:'40px' }}>No requests yet 🎉</div>}
           {requests.map(r => (
-            <div key={r.id} className="card" style={{ padding: '16px 20px' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'10px' }}>
+            <div key={r.id} className="card" style={{ padding:'14px' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'8px' }}>
                 <div>
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>{r.title || 'Untitled'} — <span style={{ color: 'var(--purple-light)' }}>{r.type || 'Other'}</span></div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                    {r.member_name || 'Unknown'} · {r.member_role || 'N/A'} · {new Date(r.created_at).toLocaleDateString('en-IN')}
-                  </div>
+                  <div style={{ fontSize:'13px', fontWeight:'600' }}>{r.title}</div>
+                  <div style={{ fontSize:'11px', color:'var(--text-dim)', marginTop:'2px' }}>{r.member_name} · {r.type} · {new Date(r.created_at).toLocaleDateString('en-IN')}</div>
                 </div>
-                <span className="badge" style={{
-                  background: r.status==='Pending'?'var(--yellow-dim)':r.status==='Approved'?'var(--green-dim)':'var(--red-dim)',
-                  color: STATUS_COLORS[r.status] || 'var(--text-dim)'
-                }}>{r.status}</span>
+                <span className="badge" style={{ background: r.status==='Pending'?'var(--yellow-dim)':r.status==='Approved'?'var(--green-dim)':'var(--red-dim)', color:STATUS_COLORS[r.status] }}>{r.status}</span>
               </div>
-
-              {r.description && (
-                <div style={{ fontSize:'12px', color:'var(--text-secondary)', padding:'10px', background:'var(--bg-hover)', borderRadius:'8px', marginBottom:'12px' }}>
-                  {r.description}
-                </div>
-              )}
-
+              {r.description && <div style={{ fontSize:'12px', color:'var(--text-secondary)', padding:'8px 10px', background:'var(--bg-hover)', borderRadius:'6px', marginBottom:'8px' }}>{r.description}</div>}
               {r.status === 'Pending' && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className="btn btn-sm" style={{ background: 'var(--green-dim)', color: 'var(--green)' }} onClick={() => handleRequest(r.id, 'Approved')}>Approve</button>
-                  <button className="btn btn-sm" style={{ background: 'var(--red-dim)', color: 'var(--red)' }} onClick={() => handleRequest(r.id, 'Rejected')}>Reject</button>
+                <div style={{ display:'flex', gap:'6px' }}>
+                  <button className="btn btn-success" style={{ fontSize:'11px', padding:'5px 14px' }} onClick={() => handleRequest(r.id, 'Approved')}>✓ Approve</button>
+                  <button className="btn btn-danger"  style={{ fontSize:'11px', padding:'5px 14px' }} onClick={() => handleRequest(r.id, 'Rejected')}>✕ Reject</button>
                 </div>
               )}
             </div>
