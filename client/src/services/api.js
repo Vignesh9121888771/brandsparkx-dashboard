@@ -11,6 +11,7 @@ API.interceptors.request.use(config => {
   return config;
 });
 
+
 // Auto-logout on 401
 API.interceptors.response.use(
   res => res,
@@ -25,6 +26,8 @@ API.interceptors.response.use(
   }
 );
 
+export const getPendingProgressUpdates = ()          => API.get('/tasks/progress/pending');
+export const createBulkMembers         = (data)      => API.post('/members/bulk', data);
 export const submitTaskProgress   = (id, data) => API.post(`/tasks/${id}/progress`, data);
 export const getPendingProgress   = ()          => API.get('/tasks/progress/pending');
 export const reviewProgressUpdate = (id, data)  => API.put(`/tasks/progress/${id}/review`, data);
