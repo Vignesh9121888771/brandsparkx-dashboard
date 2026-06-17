@@ -21,29 +21,6 @@ export default function Requests({ role, user, search }) {
   const [successMsg,   setSuccessMsg]   = useState({});
   const [errorMsg,     setErrorMsg]     = useState({});
 
-<<<<<<< HEAD
-export default function Requests({ role }) {
-  const [requests, setRequests] = useState([]);
-  const [members,  setMembers]  = useState([]);
-  const [form, setForm] = useState({ member_id: '', type: 'Leave', title: '', description: '', start_date: '', end_date: '' });
-  const [loading, setLoading]   = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
-
-  const load = () => {
-    setLoading(true);
-    Promise.all([getRequests(), getMembers()])
-      .then(([reqRes, memRes]) => {
-        setRequests(reqRes.data.data || []);
-        setMembers(memRes.data.data || []);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Requests fetch error:", err);
-        setError("Failed to load requests.");
-        setLoading(false);
-      });
-=======
   // New request form
   const [form, setForm] = useState({
     member_id: '', type: 'Leave', title: '', description: '', start_date: '', end_date: ''
@@ -75,32 +52,12 @@ export default function Requests({ role }) {
     } finally {
       setLoading(false);
     }
->>>>>>> a354a81 (feat: progress tracking with manager approval flow)
   };
 
   const handleSubmitProgress = async (task) => {
     const progress = progressForm[task.id];
     const note     = progressNote[task.id];
 
-<<<<<<< HEAD
-  const submit = async () => {
-    if (!form.member_id || !form.title) return alert('Please fill all required fields');
-    setSubmitting(true);
-    try {
-      await createRequest(form);
-      setForm({ member_id: '', type: 'Leave', title: '', description: '', start_date: '', end_date: '' });
-      load();
-    } catch (e) {
-      console.error(e);
-      alert("Failed to submit request.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading requests...</div>;
-  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
-=======
     if (progress === undefined || progress === null)
       return setErrorMsg(p => ({ ...p, [task.id]: 'Please set a progress value' }));
     if (!note || note.trim() === '')
@@ -180,7 +137,6 @@ export default function Requests({ role }) {
       <div className="spinner" />
     </div>
   );
->>>>>>> a354a81 (feat: progress tracking with manager approval flow)
 
   return (
     <div className="page">
@@ -189,78 +145,6 @@ export default function Requests({ role }) {
         <p>Manage leave requests and track task progress</p>
       </div>
 
-<<<<<<< HEAD
-      {/* Submit form */}
-      <div style={{
-        background: 'var(--bg-card)', border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-lg)', padding: '20px', marginBottom: '24px'
-      }}>
-        <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '16px' }}>Submit a Request</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>EMPLOYEE *</label>
-            <select style={inp} value={form.member_id} onChange={e => setForm({ ...form, member_id: e.target.value })}>
-              <option value=''>Select employee</option>
-              {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>REQUEST TYPE *</label>
-            <select style={inp} value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
-              {['Leave', 'Permission', 'Objection', 'Reallocation'].map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>TITLE *</label>
-            <input style={inp} placeholder='Brief title of your request' value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>DESCRIPTION</label>
-            <textarea style={{ ...inp, height: '80px', resize: 'vertical' }} placeholder='Provide more details...' value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>START DATE</label>
-            <input style={inp} type='date' value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} />
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>END DATE</label>
-            <input style={inp} type='date' value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} />
-          </div>
-        </div>
-        <button onClick={submit} disabled={submitting} style={{
-          background: 'var(--purple)', color: '#fff', border: 'none',
-          padding: '10px 24px', borderRadius: 'var(--radius-sm)',
-          fontSize: '13px', fontWeight: '500', opacity: submitting ? 0.7 : 1
-        }}>{submitting ? 'Submitting...' : 'Submit Request'}</button>
-      </div>
-
-      {/* Requests list */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {requests.map(r => {
-          const tc = typeColors[r.type]   || typeColors.Leave;
-          const sc = statusColors[r.status] || statusColors.Pending;
-          return (
-            <div key={r.id} style={{
-              background: 'var(--bg-card)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-lg)', padding: '16px 20px',
-              display: 'flex', alignItems: 'center', gap: '16px'
-            }}>
-              <div style={{
-                width: '40px', height: '40px', borderRadius: '50%',
-                background: 'var(--purple-dim)', color: 'var(--purple-light)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '12px', fontWeight: '600', flexShrink: 0
-              }}>{r.member_name?.split(' ').map(n => n[0]).join('') || '?'}</div>
-
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '600' }}>{r.title || 'Untitled'}</span>
-                  <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '20px', background: tc.bg, color: tc.color, fontWeight: '500' }}>{r.type || 'Other'}</span>
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-                  {r.member_name || 'Unknown'} · {r.member_role || 'N/A'}
-                  {r.description && ` · ${r.description.slice(0, 60)}...`}
-=======
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
         {role === 'employee' && (
@@ -311,7 +195,6 @@ export default function Requests({ role }) {
                       background: 'var(--yellow-dim)', color: 'var(--yellow)'
                     }}>⏳ Pending Approval</span>
                   )}
->>>>>>> a354a81 (feat: progress tracking with manager approval flow)
                 </div>
               </div>
 
@@ -407,19 +290,6 @@ export default function Requests({ role }) {
                 </div>
               )}
 
-<<<<<<< HEAD
-              <span style={{
-                fontSize: '11px', padding: '4px 12px', borderRadius: '20px',
-                background: sc.bg, color: sc.color, fontWeight: '600', flexShrink: 0
-              }}>{r.status || 'Pending'}</span>
-            </div>
-          );
-        })}
-        {requests.length === 0 && (
-          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-dim)' }}>No requests found.</div>
-        )}
-      </div>
-=======
               {/* Pending approval message */}
               {task.progress_status === 'pending_approval' && (
                 <div style={{
@@ -580,7 +450,6 @@ export default function Requests({ role }) {
           </button>
         </div>
       )}
->>>>>>> a354a81 (feat: progress tracking with manager approval flow)
     </div>
   );
 }
