@@ -59,7 +59,7 @@ const submitProgressUpdate = async (req, res, next) => {
     if (progress === undefined || progress === null)
       return res.status(400).json({ success: false, message: 'progress is required' });
     if (!note || note.trim() === '')
-      return res.status(400).json({ success: false, message: 'note is required — describe what you completed' });
+      return res.status(400).json({ success: false, message: 'note is required ??? describe what you completed' });
     if (!member_id)
       return res.status(400).json({ success: false, message: 'member_id is required' });
     if (progress < 0 || progress > 100)
@@ -87,7 +87,7 @@ const submitProgressUpdate = async (req, res, next) => {
     res.status(201).json({ 
       success: true, 
       data: result.rows[0],
-      message: 'Progress update submitted — awaiting manager approval'
+      message: 'Progress update submitted ??? awaiting manager approval'
     });
   } catch (err) { next(err); }
 };
@@ -143,7 +143,7 @@ const reviewProgressUpdate = async (req, res, next) => {
         [update.rows[0].progress, update.rows[0].note, newTaskStatus, update.rows[0].task_id]
       );
     } else {
-      // Rejected — just mark the task progress_status
+      // Rejected ??? just mark the task progress_status
       await db.query(
         `UPDATE tasks SET progress_status='rejected', updated_at=NOW() WHERE id=$1`,
         [update.rows[0].task_id]
