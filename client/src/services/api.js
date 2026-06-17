@@ -25,6 +25,10 @@ API.interceptors.response.use(
   }
 );
 
+export const submitTaskProgress   = (id, data) => API.post(`/tasks/${id}/progress`, data);
+export const getPendingProgress   = ()          => API.get('/tasks/progress/pending');
+export const reviewProgressUpdate = (id, data)  => API.put(`/tasks/progress/${id}/review`, data);
+export const getProgressHistory   = (id)        => API.get(`/tasks/${id}/progress/history`);
 // Auth
 export const login          = (data) => API.post('/auth/login', data);
 export const register       = (data) => API.post('/auth/register', data);
