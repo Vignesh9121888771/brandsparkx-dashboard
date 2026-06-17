@@ -18,4 +18,7 @@ const managerOnly = (req, res, next) => {
   next();
 };
 
-module.exports = { authenticate, managerOnly };
+module.exports = authenticate;
+module.exports.authenticate = authenticate;
+module.exports.managerOnly = managerOnly;
+
