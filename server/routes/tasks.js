@@ -3,7 +3,8 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const ctrl = require('../controllers/tasksController');
 
-console.log('CTRL KEYS:', Object.keys(ctrl));
+console.log('AUTH TYPE:', typeof auth);
+console.log('CTRL.getAllTasks TYPE:', typeof ctrl.getAllTasks);
 
 router.get('/', auth, ctrl.getAllTasks);
 router.post('/', auth, ctrl.createTask);
