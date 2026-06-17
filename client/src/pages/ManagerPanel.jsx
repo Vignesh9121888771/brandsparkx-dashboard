@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   getProjects, getMembers, getCapacity, getTasks, getRequests,
   updateRequest, createTask, getAISuggestion, getPendingProgressUpdates,
@@ -20,7 +20,7 @@ const STATUS_COLORS = {
 
 const EMPTY_MEMBER = { name: '', email: '', role: '', region: 'India', skills: '' };
 
-export default function ManagerPanel({ user }) {
+export default function ManagerPanel() {
   const [tab, setTab] = useState('requests');
   const [requests, setRequests] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -44,7 +44,7 @@ export default function ManagerPanel({ user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const [reqRes, taskRes, memRes, projRes, capRes, updRes] = await Promise.all([
         getRequests(), getTasks(), getMembers(), getProjects(), getCapacity(), getPendingProgressUpdates()
@@ -69,22 +69,25 @@ export default function ManagerPanel({ user }) {
           : null;
       }).filter(Boolean);
       setSuggestions(sug);
-      setLoading(false);
     } catch (err) {
       console.error("ManagerPanel load error:", err);
       setError("Failed to load manager data.");
+    } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
   const handleRequest = async (id, status) => {
     try {
       await updateRequest(id, { status, manager_note: `${status} by manager` });
       load();
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       alert("Failed to update request.");
     }
   };
@@ -108,8 +111,8 @@ export default function ManagerPanel({ user }) {
       setTaskForm({ title: '', assigned_to: '', project_id: '', priority: 'Medium', due_date: '', estimated_hours: '', description: '' });
       load();
       alert('Task assigned successfully');
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       alert("Failed to assign task.");
     }
   };
@@ -120,7 +123,8 @@ export default function ManagerPanel({ user }) {
     try {
       const res = await getAISuggestion(aiQuery);
       setAiResult(res.data.suggestion);
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       setAiResult('Failed. Check Gemini API key in .env');
     } finally {
       setAiLoading(false);
@@ -140,8 +144,8 @@ export default function ManagerPanel({ user }) {
       setBulkStatus(`success:Added ${res.data.count} member(s) successfully`);
       setBulkMembers([{ ...EMPTY_MEMBER }]);
       load();
-    } catch (e) {
-      setBulkStatus(`error:${e.response?.data?.message || 'Failed to add members'}`);
+    } catch (err) {
+      setBulkStatus(`error:${err.response?.data?.message || 'Failed'}`);
     }
   };
 

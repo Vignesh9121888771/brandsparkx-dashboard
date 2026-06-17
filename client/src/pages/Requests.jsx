@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { getRequests, createRequest, getMembers } from '../services/api';
 
 const typeColors = {
@@ -14,7 +14,7 @@ const statusColors = {
   Rejected: { color: 'var(--red)',    bg: 'var(--red-dim)'    },
 };
 
-const inp = {
+const inpStyle = {
   width: '100%', padding: '9px 12px',
   background: 'var(--bg-hover)', border: '1px solid var(--border)',
   borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
@@ -29,8 +29,7 @@ export default function Requests({ role }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
-  const load = () => {
-    setLoading(true);
+  const load = useCallback(() => {
     Promise.all([getRequests(), getMembers()])
       .then(([reqRes, memRes]) => {
         setRequests(reqRes.data.data || []);
@@ -42,9 +41,11 @@ export default function Requests({ role }) {
         setError("Failed to load requests.");
         setLoading(false);
       });
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const submit = async () => {
     if (!form.member_id || !form.title) return alert('Please fill all required fields');
@@ -53,8 +54,8 @@ export default function Requests({ role }) {
       await createRequest(form);
       setForm({ member_id: '', type: 'Leave', title: '', description: '', start_date: '', end_date: '' });
       load();
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       alert("Failed to submit request.");
     } finally {
       setSubmitting(false);
@@ -82,32 +83,32 @@ export default function Requests({ role }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
           <div>
             <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>EMPLOYEE *</label>
-            <select style={inp} value={form.member_id} onChange={e => setForm({ ...form, member_id: e.target.value })}>
+            <select style={inpStyle} value={form.member_id} onChange={e => setForm({ ...form, member_id: e.target.value })}>
               <option value=''>Select employee</option>
               {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </div>
           <div>
             <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>REQUEST TYPE *</label>
-            <select style={inp} value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+            <select style={inpStyle} value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
               {['Leave', 'Permission', 'Objection', 'Reallocation'].map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>TITLE *</label>
-            <input style={inp} placeholder='Brief title of your request' value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
+            <input style={inpStyle} placeholder='Brief title of your request' value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>DESCRIPTION</label>
-            <textarea style={{ ...inp, height: '80px', resize: 'vertical' }} placeholder='Provide more details...' value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+            <textarea style={{ ...inpStyle, height: '80px', resize: 'vertical' }} placeholder='Provide more details...' value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
           </div>
           <div>
             <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>START DATE</label>
-            <input style={inp} type='date' value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} />
+            <input style={inpStyle} type='date' value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} />
           </div>
           <div>
             <label style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginBottom: '5px' }}>END DATE</label>
-            <input style={inp} type='date' value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} />
+            <input style={inpStyle} type='date' value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} />
           </div>
         </div>
         <button onClick={submit} disabled={submitting} style={{
