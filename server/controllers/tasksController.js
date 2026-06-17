@@ -37,24 +37,15 @@ const updateTask = async (req, res, next) => {
        priority=$5, due_date=$6, estimated_hours=$7, status=$8 WHERE id=$9 RETURNING *`,
       [title, description, assigned_to, project_id, priority, due_date, estimated_hours, status, req.params.id]
     );
-<<<<<<< HEAD
-    if (!result.rows[0]) return res.status(404).json({ success: false, message: "Task not found" });
-=======
     if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Task not found' });
->>>>>>> a354a81 (feat: progress tracking with manager approval flow)
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { next(err); }
 };
 
 const deleteTask = async (req, res, next) => {
   try {
-<<<<<<< HEAD
-    const result = await db.query('DELETE FROM tasks WHERE id=$1', [req.params.id]);
-    if (result.rowCount === 0) return res.status(404).json({ success: false, message: "Task not found" });
-=======
     const result = await db.query('DELETE FROM tasks WHERE id=$1 RETURNING id', [req.params.id]);
     if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Task not found' });
->>>>>>> a354a81 (feat: progress tracking with manager approval flow)
     res.json({ success: true, message: 'Task deleted' });
   } catch (err) { next(err); }
 };
