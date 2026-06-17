@@ -81,10 +81,10 @@ export default function Dashboard({ role, user, search, defaultRegion, onNavigat
   const getColor = (v) => v > 90 ? 'var(--red)' : v > 70 ? 'var(--yellow)' : 'var(--green)';
 
   const QUICK_ACTIONS = [
-    { label: 'Add Project', icon: '➕', action: () => onNavigate?.('Projects') },
-    { label: 'New Request', icon: '📝', action: () => onNavigate?.('Requests') },
-    { label: 'Team Load',  icon: '⚖️', action: () => onNavigate?.('Team Capacity') },
-    { label: 'Reports',    icon: '📈', action: () => onNavigate?.('Analytics') },
+  { label: 'Add Project', icon: '➕', action: () => onNavigate('projects')  },
+  { label: 'New Request', icon: '📝', action: () => onNavigate('requests')  },
+  { label: 'Team Load',   icon: '⚖️', action: () => onNavigate('team')      },
+  { label: 'Reports',     icon: '📈', action: () => onNavigate('analytics') },
   ];
 
   if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading dashboard...</div>;
