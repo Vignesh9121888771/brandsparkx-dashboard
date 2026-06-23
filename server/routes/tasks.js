@@ -1,8 +1,9 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const ctrl = require('../controllers/tasksController');
 
+router.get('/productivity/summary', auth, ctrl.getProductivitySummary);
 router.get('/progress/pending', auth, ctrl.getPendingUpdates);
 router.put('/progress/:update_id/review', auth, ctrl.reviewProgressUpdate);
 router.get('/', auth, ctrl.getAllTasks);
