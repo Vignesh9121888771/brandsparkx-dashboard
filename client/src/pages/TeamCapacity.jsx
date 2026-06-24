@@ -1,148 +1,273 @@
 import { useEffect, useState } from 'react';
-import { getCapacity } from '../services/api';
+import { getCapacity, getTasks } from '../services/api';
+import axios from 'axios';
 
-const statusInfo = (pct) => {
-  const p = parseInt(pct) || 0;
-  if (p > 90) return { label: 'Overbooked', color: 'var(--red)',    bg: 'var(--red-dim)'    };
-  if (p > 70) return { label: 'Optimal',    color: 'var(--yellow)', bg: 'var(--yellow-dim)' };
-  if (p > 0)  return { label: 'Available',  color: 'var(--green)',  bg: 'var(--green-dim)'  };
-  return              { label: 'Bench',      color: 'var(--text-dim)', bg: 'var(--bg-hover)' };
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const getProductivityStatus = (score) => {
+  const s = parseFloat(score) || 0;
+  if (s >= 80) return { label:'High',    color:'var(--green)',  bg:'var(--green-dim)'  };
+  if (s >= 50) return { label:'Medium',  color:'var(--yellow)', bg:'var(--yellow-dim)' };
+  if (s >  0)  return { label:'Low',     color:'var(--red)',    bg:'var(--red-dim)'    };
+  return              { label:'No Data', color:'var(--text-dim)', bg:'var(--bg-hover)' };
 };
 
-export default function TeamCapacity() {
-  const [capacity, setCapacity] = useState([]);
-  const [filter, setFilter]     = useState('All');
-  const [loading, setLoading]   = useState(true);
-  const [error,   setError]     = useState(null);
+const getScoreColor = (score) => {
+  const s = parseFloat(score) || 0;
+  if (s >= 80) return 'var(--green)';
+  if (s >= 50) return 'var(--yellow)';
+  if (s >  0)  return 'var(--red)';
+  return 'var(--text-dim)';
+};
+
+export default function TeamCapacity({ role, search, defaultRegion }) {
+  const [members,      setMembers]      = useState([]);
+  const [tasks,        setTasks]        = useState([]);
+  const [filter,       setFilter]       = useState('All');
+  const [regionFilter, setRegionFilter] = useState(defaultRegion || 'All');
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState(null);
 
   useEffect(() => {
-    getCapacity()
-      .then(r => {
-        setCapacity(r.data.data || []);
+    const load = async () => {
+      try {
+        setLoading(true);
+        const token = localStorage.getItem('bsx_token');
+
+        // Get productivity summary + capacity + tasks
+        const [prodRes, capRes, taskRes] = await Promise.all([
+          axios.get(`${API_URL}/tasks/productivity/summary`, { headers:{ Authorization:`Bearer ${token}` } }),
+          getCapacity(),
+          getTasks(),
+        ]);
+
+        const prodData = prodRes.data.data || [];
+        const capData  = capRes.data.data  || [];
+        const taskData = taskRes.data.data || [];
+        setTasks(taskData);
+
+        // Merge productivity data with capacity data
+        const merged = capData.map(m => {
+          const prod = prodData.find(p => p.id === m.id) || {};
+          return {
+            ...m,
+            productivity_score: prod.productivity_score || m.productivity_score || 0,
+            incentive_points:   prod.incentive_points   || m.incentive_points   || 0,
+            total_tasks:        prod.total_tasks        || 0,
+            completed_tasks:    prod.completed_tasks    || 0,
+            on_time_tasks:      prod.on_time_tasks      || 0,
+            avg_quality:        prod.avg_quality        || null,
+            overtime_submissions: prod.overtime_submissions || 0,
+          };
+        });
+        setMembers(merged);
         setLoading(false);
-      })
-      .catch(err => {
-        console.error("Capacity fetch error:", err);
-        setError("Failed to load team capacity.");
+      } catch (err) {
+        console.error('TeamCapacity fetch error:', err);
+        setError('Failed to load team capacity.');
         setLoading(false);
-      });
+      }
+    };
+    load();
   }, []);
 
-  const filters = ['All', 'Overbooked', 'Optimal', 'Available', 'Bench'];
-  const filtered = capacity.filter(m => {
-    if (filter === 'All') return true;
-    return statusInfo(m.allocated_percent).label === filter;
+  const filters = ['All','High','Medium','Low','No Data'];
+
+  const filtered = members.filter(m => {
+    const status      = getProductivityStatus(m.productivity_score);
+    const matchFilter = filter === 'All' || status.label === filter;
+    const matchRegion = regionFilter === 'All' || m.region === regionFilter;
+    const matchSearch = !search || m.name?.toLowerCase().includes(search.toLowerCase()) || m.role?.toLowerCase().includes(search.toLowerCase());
+    return matchFilter && matchRegion && matchSearch;
   });
 
-  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading team capacity...</div>;
-  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
+  // Summary stats
+  const avgProductivity = members.length
+    ? Math.round(members.reduce((s,m) => s + (parseFloat(m.productivity_score)||0), 0) / members.length)
+    : 0;
+  const topPerformer  = [...members].sort((a,b) => (b.productivity_score||0) - (a.productivity_score||0))[0];
+  const totalIncentive = members.reduce((s,m) => s + (m.incentive_points||0), 0);
+  const highPerformers = members.filter(m => (m.productivity_score||0) >= 80).length;
+
+  if (loading) return <div className="page" style={{ textAlign:'center', padding:'100px' }}>Loading team capacity...</div>;
+  if (error)   return <div className="page" style={{ textAlign:'center', padding:'100px', color:'var(--red)' }}>{error}</div>;
 
   return (
     <div className="page">
-      <div style={{ marginBottom: '28px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>Team Capacity</h1>
-        <p style={{ color: 'var(--text-dim)', fontSize: '14px' }}>Manage and forecast resource utilization across all squads.</p>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'24px' }}>
+        <div>
+          <h1 style={{ fontSize:'24px', fontWeight:'700', marginBottom:'4px' }}>Team Productivity</h1>
+          <p style={{ color:'var(--text-dim)', fontSize:'14px' }}>Real productivity scores based on output quality, not hours worked.</p>
+        </div>
+        <div style={{ display:'flex', gap:'6px' }}>
+          {['All','India','UAE'].map(r => (
+            <button key={r} onClick={() => setRegionFilter(r)} style={{
+              padding:'6px 14px', borderRadius:'20px', border:'1px solid', fontSize:'11px', fontWeight:'500', cursor:'pointer',
+              borderColor: regionFilter===r ? 'var(--purple)' : 'var(--border)',
+              background:  regionFilter===r ? 'var(--purple-dim)' : 'transparent',
+              color:       regionFilter===r ? 'var(--purple-light)' : 'var(--text-dim)',
+            }}>{r}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary metric cards */}
+      <div className="grid-4" style={{ marginBottom:'20px' }}>
+        {[
+          { label:'Avg Productivity', value:`${avgProductivity}%`, sub:'Team average', color:getScoreColor(avgProductivity), icon:'📊' },
+          { label:'High Performers',  value:highPerformers,        sub:'Score ≥ 80%',  color:'var(--green)',        icon:'🏆' },
+          { label:'Top Performer',    value:topPerformer?.name?.split(' ')[0]||'—', sub:`${topPerformer?.productivity_score||0}% score`, color:'var(--purple-light)', icon:'⭐' },
+          { label:'Total Points',     value:totalIncentive,        sub:'Incentive pool', color:'var(--yellow)',       icon:'🎯' },
+        ].map((m,i) => (
+          <div key={i} className="metric-card" style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius-lg)', padding:'18px' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'10px' }}>
+              <div style={{ fontSize:'11px', color:'var(--text-dim)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{m.label}</div>
+              <span style={{ fontSize:'18px' }}>{m.icon}</span>
+            </div>
+            <div style={{ fontSize:'26px', fontWeight:'800', color:m.color, fontFamily:'var(--font-mono)', marginBottom:'4px' }}>{m.value}</div>
+            <div style={{ fontSize:'11px', color:'var(--text-dim)' }}>{m.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Productivity formula explanation */}
+      <div style={{ padding:'12px 16px', background:'var(--bg-elevated)', border:'1px solid var(--border-light)', borderRadius:'var(--radius-md)', marginBottom:'20px', display:'flex', gap:'16px', flexWrap:'wrap' }}>
+        <div style={{ fontSize:'11px', color:'var(--text-dim)', fontWeight:'600', marginRight:'4px' }}>Productivity Formula:</div>
+        {[
+          { label:'Task Completion', weight:'40%', color:'var(--blue)' },
+          { label:'Approved Progress', weight:'30%', color:'var(--purple-light)' },
+          { label:'On-Time Delivery', weight:'20%', color:'var(--green)' },
+          { label:'Quality Rating', weight:'10%', color:'var(--yellow)' },
+        ].map(f => (
+          <div key={f.label} style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+            <div style={{ width:'8px', height:'8px', borderRadius:'2px', background:f.color, flexShrink:0 }} />
+            <span style={{ fontSize:'11px', color:'var(--text-secondary)' }}>{f.label}</span>
+            <span style={{ fontSize:'11px', fontWeight:'700', color:f.color }}>{f.weight}</span>
+          </div>
+        ))}
       </div>
 
       {/* Filter tabs */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+      <div style={{ display:'flex', gap:'8px', marginBottom:'20px' }}>
         {filters.map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
-            padding: '6px 14px', borderRadius: '20px', border: '1px solid',
-            fontSize: '12px', fontWeight: '500',
-            borderColor: filter === f ? 'var(--purple)' : 'var(--border)',
-            background: filter === f ? 'var(--purple-dim)' : 'transparent',
-            color: filter === f ? 'var(--purple-light)' : 'var(--text-dim)',
+            padding:'6px 14px', borderRadius:'20px', border:'1px solid', fontSize:'12px', fontWeight:'500', cursor:'pointer',
+            borderColor: filter===f ? 'var(--purple)' : 'var(--border)',
+            background:  filter===f ? 'var(--purple-dim)' : 'transparent',
+            color:       filter===f ? 'var(--purple-light)' : 'var(--text-dim)',
           }}>{f}</button>
         ))}
       </div>
 
-      {/* Table header */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr 2fr 100px',
-        padding: '10px 20px', background: 'var(--bg-secondary)',
-        borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
-        border: '1px solid var(--border)', borderBottom: 'none',
-        fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em'
-      }}>
-        <span>Employee</span><span>Role</span><span>Region</span><span>Capacity (4w)</span><span>Status</span>
-      </div>
+      {/* Member cards */}
+      <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+        {filtered.map(m => {
+          const score    = parseFloat(m.productivity_score) || 0;
+          const status   = getProductivityStatus(score);
+          const initials = m.name?.split(' ').map(n=>n[0]).join('') || '?';
+          const memberTasks = tasks.filter(t => t.assigned_to === m.id);
+          const completedTasks = memberTasks.filter(t => t.status === 'Completed').length;
+          const inProgressTasks = memberTasks.filter(t => t.status === 'In Progress').length;
 
-      {/* Rows */}
-      <div style={{ border: '1px solid var(--border)', borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', overflow: 'hidden' }}>
-        {filtered.map((m, i) => {
-          const pct    = parseInt(m.allocated_percent) || 0;
-          const status = statusInfo(pct);
-          const initials = m.name?.split(' ').map(n => n[0]).join('') || '?';
           return (
-            <div key={m.id} style={{
-              display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr 2fr 100px',
-              padding: '14px 20px', alignItems: 'center',
-              background: i % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-secondary)',
-              borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none',
-              transition: 'background 0.15s',
-            }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-              onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-secondary)'}
-            >
-              {/* Name */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{
-                  width: '34px', height: '34px', borderRadius: '50%',
-                  background: 'var(--purple-dim)', color: 'var(--purple-light)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '12px', fontWeight: '600', flexShrink: 0
-                }}>{initials}</div>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: '500' }}>{m.name || 'Unknown'}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '1px' }}>ID #{m.id}</div>
+            <div key={m.id} className="card" style={{ padding:'20px' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr 1fr 1fr', gap:'16px', alignItems:'center' }}>
+
+                {/* Member info */}
+                <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+                  <div style={{ position:'relative', flexShrink:0 }}>
+                    <div style={{
+                      width:'40px', height:'40px', borderRadius:'50%',
+                      background:`linear-gradient(135deg, ${status.color}33, ${status.color}11)`,
+                      border:`2px solid ${status.color}`,
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      fontSize:'13px', fontWeight:'700', color:status.color
+                    }}>{initials}</div>
+                    {m.overtime_submissions > 0 && (
+                      <div style={{ position:'absolute', top:'-4px', right:'-4px', width:'14px', height:'14px', borderRadius:'50%', background:'var(--yellow)', border:'2px solid var(--bg-card)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'7px' }}>⏰</div>
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ fontSize:'13px', fontWeight:'600' }}>{m.name||'Unknown'}</div>
+                    <div style={{ fontSize:'11px', color:'var(--text-dim)' }}>{m.role||'N/A'}</div>
+                    <span style={{ fontSize:'10px', padding:'2px 7px', borderRadius:'20px', background:m.region==='UAE'?'var(--blue-dim)':'var(--green-dim)', color:m.region==='UAE'?'var(--blue)':'var(--green)', marginTop:'3px', display:'inline-block' }}>{m.region}</span>
+                  </div>
+                </div>
+
+                {/* Productivity Score */}
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize:'22px', fontWeight:'800', color:status.color, fontFamily:'var(--font-mono)' }}>{score.toFixed(0)}%</div>
+                  <div style={{ marginTop:'4px' }}>
+                    <div style={{ height:'4px', background:'var(--border)', borderRadius:'2px', overflow:'hidden' }}>
+                      <div style={{ height:'100%', width:`${score}%`, background:status.color, borderRadius:'2px', transition:'width 0.8s ease' }} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginTop:'3px' }}>Productivity</div>
+                </div>
+
+                {/* Tasks */}
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize:'16px', fontWeight:'700', color:'var(--text-primary)' }}>
+                    {completedTasks}<span style={{ fontSize:'12px', color:'var(--text-dim)' }}>/{memberTasks.length}</span>
+                  </div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginTop:'2px' }}>Tasks Done</div>
+                  {inProgressTasks > 0 && (
+                    <div style={{ fontSize:'10px', color:'var(--blue)', marginTop:'1px' }}>{inProgressTasks} in progress</div>
+                  )}
+                </div>
+
+                {/* Quality */}
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize:'16px', fontWeight:'700', color:'var(--yellow)' }}>
+                    {m.avg_quality ? `${parseFloat(m.avg_quality).toFixed(1)}★` : '—'}
+                  </div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginTop:'2px' }}>Avg Quality</div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)' }}>out of 5</div>
+                </div>
+
+                {/* Incentive Points */}
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize:'16px', fontWeight:'700', color:'var(--yellow)' }}>🏆 {m.incentive_points||0}</div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginTop:'2px' }}>Incentive Pts</div>
+                  {m.overtime_submissions > 0 && (
+                    <div style={{ fontSize:'10px', color:'var(--yellow)', marginTop:'1px' }}>⏰ {m.overtime_submissions} overtime</div>
+                  )}
+                </div>
+
+                {/* Status badge */}
+                <div style={{ textAlign:'center' }}>
+                  <span style={{ fontSize:'11px', padding:'5px 12px', borderRadius:'20px', background:status.bg, color:status.color, fontWeight:'600' }}>{status.label}</span>
+                  {m.on_time_tasks > 0 && (
+                    <div style={{ fontSize:'10px', color:'var(--green)', marginTop:'4px' }}>✅ {m.on_time_tasks} on time</div>
+                  )}
                 </div>
               </div>
 
-              {/* Role */}
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{m.role || 'N/A'}</div>
-
-              {/* Region */}
-              <span style={{
-                fontSize: '11px', padding: '3px 10px', borderRadius: '20px',
-                background: m.region === 'UAE' ? 'var(--blue-dim)' : 'var(--green-dim)',
-                color: m.region === 'UAE' ? 'var(--blue)' : 'var(--green)',
-                fontWeight: '500', width: 'fit-content'
-              }}>{m.region || 'N/A'}</span>
-
-              {/* Capacity bar */}
-              <div style={{ paddingRight: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{pct}% allocated</span>
-                  <span style={{ fontSize: '11px', color: status.color }}>{100 - pct}% free</span>
+              {/* Mini task breakdown bar */}
+              {memberTasks.length > 0 && (
+                <div style={{ marginTop:'14px', paddingTop:'14px', borderTop:'1px solid var(--border)' }}>
+                  <div style={{ display:'flex', gap:'4px', height:'6px', borderRadius:'3px', overflow:'hidden' }}>
+                    <div style={{ flex:completedTasks, background:'var(--green)', minWidth:completedTasks>0?'4px':0 }} />
+                    <div style={{ flex:inProgressTasks, background:'var(--blue)', minWidth:inProgressTasks>0?'4px':0 }} />
+                    <div style={{ flex:memberTasks.length-completedTasks-inProgressTasks, background:'var(--border)' }} />
+                  </div>
+                  <div style={{ display:'flex', gap:'12px', marginTop:'5px' }}>
+                    <span style={{ fontSize:'10px', color:'var(--green)' }}>■ {completedTasks} completed</span>
+                    <span style={{ fontSize:'10px', color:'var(--blue)' }}>■ {inProgressTasks} in progress</span>
+                    <span style={{ fontSize:'10px', color:'var(--text-dim)' }}>■ {memberTasks.length-completedTasks-inProgressTasks} pending</span>
+                  </div>
                 </div>
-                <div style={{ height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{
-                    height: '100%', width: `${Math.min(pct, 100)}%`,
-                    background: status.color, borderRadius: '3px',
-                    transition: 'width 0.6s ease'
-                  }} />
-                </div>
-              </div>
-
-              {/* Status */}
-              <span style={{
-                fontSize: '11px', padding: '4px 10px', borderRadius: '20px',
-                background: status.bg, color: status.color,
-                fontWeight: '600', textAlign: 'center'
-              }}>{status.label}</span>
+              )}
             </div>
           );
         })}
       </div>
 
       {filtered.length === 0 && (
-        <div style={{
-          padding: '40px', textAlign: 'center',
-          color: 'var(--text-dim)', fontSize: '13px',
-          background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)',
-          border: '1px solid var(--border)', marginTop: '8px'
-        }}>No employees match this filter</div>
+        <div style={{ padding:'40px', textAlign:'center', color:'var(--text-dim)', fontSize:'13px', background:'var(--bg-card)', borderRadius:'var(--radius-lg)', border:'1px solid var(--border)' }}>
+          No employees match this filter
+        </div>
       )}
     </div>
   );
