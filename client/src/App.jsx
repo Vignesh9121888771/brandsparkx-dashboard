@@ -52,9 +52,12 @@ function findPage(query) {
 }
 
 export default function App() {
-  const [user,        setUser]        = useState(null);
+  const [user,        setUser]        = useState(() => {
+    const saved = localStorage.getItem('bsx_user');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [page,        setPage]        = useState('dashboard');
-  const [ready,       setReady]       = useState(false);
+  const [ready]       = useState(true);
   const [search,      setSearch]      = useState('');
   const [alerts,      setAlerts]      = useState([]);
   const [collapsed,   setCollapsed]   = useState(false);
@@ -62,12 +65,6 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const notifRef   = useRef();
   const profileRef = useRef();
-
-  useEffect(() => {
-    const saved = localStorage.getItem('bsx_user');
-    if (saved) setUser(JSON.parse(saved));
-    setReady(true);
-  }, []);
 
   useEffect(() => {
     const handler = e => {
@@ -80,9 +77,10 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+    const API_BASE = import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api';
     const check = async () => {
       try {
-        const res  = await fetch('http://localhost:5000/api/projects', {
+        const res  = await fetch(`${API_BASE}/projects`, {
           headers: { Authorization: `Bearer ${localStorage.getItem('bsx_token')}` }
         });
         const data = await res.json();
@@ -99,154 +97,87 @@ export default function App() {
     return () => clearInterval(iv);
   }, [user]);
 
-  const handleSearch = val => {
-    setSearch(val);
-    if (val.length >= 2) {
-      const target = findPage(val);
-      if (target && target !== page) setPage(target);
-    }
-  };
-
-  const navigate = p => {
-    setPage(p);
-    setShowNotif(false);
-    setShowProfile(false);
-  };
-
-  const handleLogin  = u => { setUser(u); setPage('dashboard'); };
   const handleLogout = () => {
     localStorage.removeItem('bsx_token');
     localStorage.removeItem('bsx_user');
     setUser(null);
-    setShowProfile(false);
+    setPage('dashboard');
   };
 
-  if (!ready) return null;
-  if (!user)  return <Login onLogin={handleLogin} />;
+  const navigate = (id) => {
+    setPage(id);
+    window.scrollTo(0, 0);
+  };
 
-  const isManager  = user.role === 'manager';
-  const NAV        = isManager ? MANAGER_NAV : EMPLOYEE_NAV;
-  const initials   = user.name?.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+  const handleSearch = (val) => {
+    setSearch(val);
+    const match = findPage(val);
+    if (match) navigate(match);
+  };
+
+  if (!ready) return <div className="loading-state">Initializing...</div>;
+  if (!user)  return <Login onLogin={u => setUser(u)} />;
+
+  const isManager = user.role === 'manager';
+  const navItems  = isManager ? MANAGER_NAV : EMPLOYEE_NAV;
   const userRegion = user.region || 'All';
-
-  const mainNav  = NAV.filter(n => n.section === 'main');
-  const toolsNav = NAV.filter(n => n.section === 'tools');
+  const initials   = user.name?.split(' ').map(n => n[0]).join('') || '?';
 
   const pages = {
-    dashboard: <Dashboard    role={user.role} user={user} search={search} defaultRegion={userRegion} onNavigate={navigate} />,
-    team:      <TeamCapacity role={user.role} user={user} search={search} defaultRegion={userRegion} />,
-    projects:  <Projects     role={user.role} user={user} search={search} defaultRegion={userRegion} />,
-    requests:  <Requests     role={user.role} user={user} search={search} />,
-    manager:   <ManagerPanel user={user} />,
+    dashboard: <Dashboard role={user.role} user={user} search={search} defaultRegion={userRegion} onNavigate={navigate} />,
+    team:      <TeamCapacity search={search} defaultRegion={userRegion} />,
+    projects:  <Projects user={user} search={search} defaultRegion={userRegion} />,
+    requests:  <Requests role={user.role} user={user} search={search} />,
+    manager:   <ManagerPanel user={user} search={search} />,
     analytics: <Analytics />,
-    calendar:  <Calendar     user={user} />,
+    calendar:  <Calendar />,
   };
 
-  const NavBtn = ({ n }) => (
-    <button
-      className={`nav-btn ${page === n.id ? 'active' : ''}`}
-      onClick={() => navigate(n.id)}
-      title={collapsed ? n.label : ''}
-    >
-      <span className="nav-icon">{n.icon}</span>
-      {!collapsed && <span className="nav-label">{n.label}</span>}
-    </button>
-  );
-
   return (
-    <div className="app-layout">
-
-      {/* ── Sidebar ─────────────────────── */}
+    <div className="layout">
+      {/* ── Sidebar ───────────────────── */}
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-
-        {/* Logo + Toggle row */}
         <div className="sidebar-header">
-           {!collapsed && (
-            <div style={{
-              flex: 1,
-              animation: 'slideIn 0.2s ease',
-            }}>
-              <div style={{
-                fontSize: '16px',
-                fontWeight: '900',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                lineHeight: 1,
-                fontFamily: 'Inter, sans-serif',
-              }}>
-                <span style={{ color: '#f1f1f5' }}>BRAND</span>
-                <span style={{ color: '#e11d48' }}>SPARK</span>
-                <span style={{ color: '#e11d48', fontSize: '18px', fontWeight: '900' }}>✕</span>
-              </div>
-            </div>
-          )}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="sidebar-toggle-btn"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <rect x="1" y="1" width="5" height="14" rx="1.5" opacity="0.9"/>
-              <rect x="8" y="1" width="7" height="3" rx="1"/>
-              <rect x="8" y="6" width="7" height="3" rx="1"/>
-              <rect x="8" y="11" width="7" height="4" rx="1"/>
-            </svg>
+          <div className="logo-box">B</div>
+          {!collapsed && <span className="logo-text">BrandSparkX</span>}
+          <button className="collapse-btn" onClick={() => setCollapsed(!collapsed)}>
+            {collapsed ? '→' : '←'}
           </button>
         </div>
 
-        {/* Deadline alert */}
-        {alerts.length > 0 && (
-          collapsed ? (
-            /* Collapsed: tiny red dot only */
-            <div
-              onClick={() => navigate('calendar')}
-              title={`${alerts.length} urgent deadline${alerts.length > 1 ? 's' : ''}`}
-              style={{
-                width: '8px', height: '8px',
-                borderRadius: '50%',
-                background: 'var(--red)',
-                margin: '0 auto 8px',
-                cursor: 'pointer',
-                boxShadow: '0 0 6px var(--red)',
-                animation: 'pulse 2s infinite',
-              }}
-            />
-          ) : (
-            <div className="sidebar-alert" onClick={() => navigate('calendar')}>
-              <div className="sidebar-alert-title">
-                ⚠ {alerts.length} urgent deadline{alerts.length > 1 ? 's' : ''}
-              </div>
-              {alerts.slice(0,2).map(a => {
-                const days = Math.ceil((new Date(a.deadline) - new Date()) / (1000*60*60*24));
-                return <div key={a.id} className="sidebar-alert-item">{a.name} — {days}d</div>;
-              })}
-            </div>
-            )
-          )}
-
-        {/* Nav */}
         <nav className="sidebar-nav">
-          <div className="nav-section">
-            {!collapsed && <div className="nav-section-label">Main</div>}
-            {mainNav.map(n => <NavBtn key={n.id} n={n} />)}
-          </div>
-          {toolsNav.length > 0 && (
-            <div className="nav-section">
-              {!collapsed && <div className="nav-section-label">Tools</div>}
-              {toolsNav.map(n => <NavBtn key={n.id} n={n} />)}
-            </div>
-          )}
+          <div className="nav-section-label">{collapsed ? '—' : 'Operations'}</div>
+          {navItems.filter(i => i.section === 'main').map(item => (
+            <button
+              key={item.id}
+              className={`nav-item ${page === item.id ? 'active' : ''}`}
+              onClick={() => navigate(item.id)}
+              title={item.label}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              {!collapsed && <span className="nav-label">{item.label}</span>}
+            </button>
+          ))}
+
+          <div className="nav-section-label" style={{ marginTop: '16px' }}>{collapsed ? '—' : 'System'}</div>
+          {navItems.filter(i => i.section === 'tools').map(item => (
+            <button
+              key={item.id}
+              className={`nav-item ${page === item.id ? 'active' : ''}`}
+              onClick={() => navigate(item.id)}
+              title={item.label}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              {!collapsed && <span className="nav-label">{item.label}</span>}
+            </button>
+          ))}
         </nav>
 
-        {/* Role badge */}
+        {/* Global info */}
         {!collapsed && (
-          <div className="role-badge" style={{
-            background: isManager ? 'var(--purple-dim)' : 'var(--green-dim)',
-            border: `1px solid ${isManager ? 'rgba(124,58,237,0.3)' : 'rgba(16,185,129,0.3)'}`,
-            color: isManager ? 'var(--purple-light)' : 'var(--green)',
-            animation: 'slideIn 0.2s ease'
-          }}>
-            {isManager ? `⚙ Manager${userRegion !== 'All' ? ` · ${userRegion}` : ''}` : '◎ Employee'}
+          <div className="sidebar-info">
+            <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Current Region</div>
+            {isManager ? `Manager ${userRegion !== 'All' ? `· ${userRegion}` : ''}` : '◎ Employee'}
           </div>
         )}
 
