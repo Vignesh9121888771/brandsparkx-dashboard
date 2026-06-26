@@ -77,7 +77,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    const API_BASE = import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api';
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
     const check = async () => {
       try {
         const res  = await fetch(`${API_BASE}/projects`, {
@@ -135,7 +135,6 @@ export default function App() {
 
   return (
     <div className="layout">
-      {/* ── Sidebar ───────────────────── */}
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           <div className="logo-box">B</div>
@@ -173,17 +172,13 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Global info */}
-        {!collapsed && (
-          <div className="sidebar-info">
-            <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Current Region</div>
-            <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-primary)' }}>
-               {isManager ? `Manager · ${userRegion}` : `Employee · ${userRegion}`}
-            </div>
+        <div className="sidebar-info">
+          {!collapsed && <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Region</div>}
+          <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-primary)' }}>
+             {collapsed ? userRegion[0] : `${user.role === 'manager' ? 'MGR' : 'EMP'} · ${userRegion}`}
           </div>
-        )}
+        </div>
 
-        {/* User footer */}
         <div className="sidebar-footer">
           <div className="user-card" onClick={() => setShowProfile(!showProfile)}>
             <div className="avatar" style={{ fontSize: '11px', flexShrink: 0 }}>{initials}</div>
@@ -200,7 +195,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* ── Main area ───────────────────── */}
       <div className="main-area">
         <div className="topbar">
           <div className="search-wrap">
@@ -211,7 +205,7 @@ export default function App() {
           <div style={{ flex: 1 }} />
 
           <div ref={notifRef} style={{ position: 'relative' }}>
-            <button onClick={() => setShowNotif(!showNotif)} style={{ background:'none', border:'none', cursor:'pointer', position:'relative', padding:'6px' }}>
+            <button onClick={() => { setShowNotif(!showNotif); setShowProfile(false); }} style={{ background:'none', border:'none', cursor:'pointer', position:'relative', padding:'6px' }}>
               <span style={{ fontSize:'18px' }}>🔔</span>
               {alerts.length > 0 && <div className="notif-badge">{alerts.length}</div>}
             </button>
@@ -225,7 +219,7 @@ export default function App() {
                   {alerts.length === 0 ? <div style={{ padding:'20px', textAlign:'center', color:'var(--text-dim)', fontSize:'12px' }}>All clear ✅</div> : alerts.map(a => (
                     <div key={a.id} className="dropdown-item" onClick={() => navigate('projects')}>
                        <div style={{ fontSize:'12px', fontWeight:'500' }}>{a.name}</div>
-                       <div style={{ fontSize:'11px', color:'var(--red)' }}>Deadline approaching: {new Date(a.deadline).toLocaleDateString()}</div>
+                       <div style={{ fontSize:'11px', color:'var(--red)' }}>Deadline: {new Date(a.deadline).toLocaleDateString()}</div>
                     </div>
                   ))}
                 </div>
@@ -234,7 +228,7 @@ export default function App() {
           </div>
 
           <div ref={profileRef} style={{ position: 'relative', marginLeft:'12px' }}>
-            <div className="avatar" style={{ cursor: 'pointer', fontSize: '11px' }} onClick={() => setShowProfile(!showProfile)}>{initials}</div>
+            <div className="avatar" style={{ cursor: 'pointer', fontSize: '11px' }} onClick={() => { setShowProfile(!showProfile); setShowNotif(false); }}>{initials}</div>
             {showProfile && (
               <div className="dropdown">
                 <div style={{ padding: '14px', borderBottom: '1px solid var(--border)' }}>

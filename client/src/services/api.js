@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
 });
 
 // Auto-attach token to every request
@@ -19,7 +19,9 @@ API.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('bsx_token');
       localStorage.removeItem('bsx_user');
-      window.location.href = '/';
+      if (window.location.pathname !== '/') {
+        window.location.href = '/';
+      }
     }
     console.error("API Error:", err.response?.data?.message || err.message);
     return Promise.reject(err);
@@ -36,6 +38,7 @@ export const getProgressHistory   = (id)        => API.get(`/tasks/${id}/progres
 // Auth
 export const login          = (data) => API.post('/auth/login', data);
 export const register       = (data) => API.post('/auth/register', data);
+export const registerManager = (data) => API.post('/auth/register-manager', data);
 export const getMe          = ()     => API.get('/auth/me');
 export const getUsers       = ()     => API.get('/auth/users');
 export const toggleUser     = (id)   => API.put(`/auth/users/${id}/toggle`);

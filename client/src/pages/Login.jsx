@@ -1,8 +1,5 @@
 import { useState } from 'react';
-import { login, register } from '../services/api';
-import axios from 'axios';
-
-const BASE = import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api';
+import { login, register, registerManager } from '../services/api';
 
 const inp = {
   width: '100%', padding: '11px 13px',
@@ -26,13 +23,14 @@ export default function Login({ onLogin }) {
     if (!form.email || !form.password) return setError('Email and password are required');
     if (mode === 'register' && !form.name) return setError('Name is required');
     if (mode === 'register' && isManager && !form.manager_code) return setError('Manager access code required');
+
     setLoading(true);
     try {
       let res;
       if (mode === 'login') {
         res = await login({ email: form.email, password: form.password });
       } else if (isManager) {
-        res = await axios.post(`${BASE}/auth/register-manager`, {
+        res = await registerManager({
           name: form.name, email: form.email,
           password: form.password, manager_code: form.manager_code,
           region: form.region
@@ -40,11 +38,17 @@ export default function Login({ onLogin }) {
       } else {
         res = await register({ name: form.name, email: form.email, password: form.password });
       }
-      localStorage.setItem('bsx_token', res.data.token);
-      localStorage.setItem('bsx_user',  JSON.stringify(res.data.user));
-      onLogin(res.data.user);
+
+      if (res.data.token) {
+        localStorage.setItem('bsx_token', res.data.token);
+        localStorage.setItem('bsx_user',  JSON.stringify(res.data.user));
+        onLogin(res.data.user);
+      } else {
+        setError('Server returned an empty response');
+      }
     } catch (err) {
-      setError(err.response?.data?.message || 'Authentication failed. Check your credentials.');
+      console.error('Auth error:', err);
+      setError(err.response?.data?.message || 'Authentication failed. Check your credentials and server status.');
     } finally {
       setLoading(false);
     }
