@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
-import { getMembers, getProjects, getCapacity, getTasks, getRequests, getProductivitySummary } from '../services/api';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { getProjects, getRequests, getProductivitySummary } from '../services/api';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const CT = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -24,10 +24,7 @@ const getProductivityColor = (score) => {
 };
 
 export default function Dashboard({ user, search, defaultRegion, onNavigate }) {
-  const [members,      setMembers]      = useState([]);
   const [projects,     setProjects]     = useState([]);
-  const [capacity,     setCapacity]     = useState([]);
-  const [tasks,        setTasks]        = useState([]);
   const [requests,     setRequests]     = useState([]);
   const [productivity, setProductivity] = useState([]);
   const [region,       setRegion]       = useState(defaultRegion || 'All');
@@ -37,13 +34,13 @@ export default function Dashboard({ user, search, defaultRegion, onNavigate }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const [memRes, projRes, capRes, taskRes, reqRes, prodRes] = await Promise.all([
-          getMembers(), getProjects(), getCapacity(), getTasks(), getRequests(), getProductivitySummary()
+        const [projRes, reqRes, prodRes] = await Promise.all([
+          getProjects(), getRequests(), getProductivitySummary()
         ]);
-        setMembers(memRes.data.data   || []);
+
         setProjects(projRes.data.data || []);
-        setCapacity(capRes.data.data  || []);
-        setTasks(taskRes.data.data    || []);
+
+
         setRequests(reqRes.data.data  || []);
         setProductivity(prodRes.data.data || []);
         setLoading(false);
@@ -56,36 +53,39 @@ export default function Dashboard({ user, search, defaultRegion, onNavigate }) {
     load();
   }, []);
 
-  const filteredMembers = useMemo(() => {
-    const list = region === 'All' ? members : members.filter(m => m.region === region);
-    if (!search) return list;
-    return list.filter(m =>
-      m.name?.toLowerCase().includes(search.toLowerCase()) ||
-      m.role?.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [members, region, search]);
+  const now      = new Date();
+  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  const dateStr  = `${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}`;
 
   const filteredProjects = useMemo(() => {
     const list = region === 'All' ? projects : projects.filter(p => p.region === region);
     if (!search) return list;
-    return list.filter(p => p.name?.toLowerCase().includes(search.toLowerCase()));
+    return list.filter(p => p.name?.toLowerCase().includes(search.toLowerCase()) || p.client?.toLowerCase().includes(search.toLowerCase()));
   }, [projects, region, search]);
 
-  const activeProjects = filteredProjects.filter(p => p.status === 'Active');
-  const pendingRequests = requests.filter(r => r.status === 'Pending');
-  const overdueTasks = tasks.filter(t => t.status !== 'Completed' && t.due_date && new Date(t.due_date) < new Date());
+  const activeCount  = filteredProjects.filter(p => p.status === 'Active').length;
+  const pendingCount = requests.filter(r => r.status === 'Pending').length;
 
-  const capacityData = filteredMembers.map(m => {
-    const cap = capacity.find(c => c.id === m.id) || { allocated_percent: 0 };
-    return {
-      name: m.name?.split(' ')[0],
-      allocated: parseInt(cap.allocated_percent) || 0,
-      available: 100 - (parseInt(cap.allocated_percent) || 0)
-    };
-  }).slice(0, 8);
+  // Productivity metrics
+  const avgProductivity = productivity.length
+    ? Math.round(productivity.reduce((s,m) => s + (parseFloat(m.productivity_score)||0), 0) / productivity.length)
+    : 0;
+  const topPerformers = [...productivity].sort((a,b) => (b.productivity_score||0) - (a.productivity_score||0)).slice(0,3);
+  const highPerformers = productivity.filter(m => (m.productivity_score||0) >= 80).length;
+  const totalIncentivePoints = productivity.reduce((s,m) => s + (m.incentive_points||0), 0);
 
-  const now = new Date();
-  const dateStr = `${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}`;
+  // Productivity chart data
+  const productivityChartData = productivity.slice(0,8).map(m => ({
+    name: m.name?.split(' ')[0],
+    value: Math.round(parseFloat(m.productivity_score) || 0),
+    color: getProductivityColor(m.productivity_score)
+  }));
+
+  const urgentProjects = filteredProjects.filter(p => {
+    if (!p.deadline || p.status === 'Completed') return false;
+    const days = Math.ceil((new Date(p.deadline) - new Date()) / (1000*60*60*24));
+    return days <= 7 && days >= 0;
+  });
 
   if (loading) return <div className="loading-state">Syncing operational data...</div>;
   if (error) return <div className="error-state">{error}</div>;
@@ -95,7 +95,7 @@ export default function Dashboard({ user, search, defaultRegion, onNavigate }) {
       <div className="page-header" style={{ marginBottom:'24px' }}>
         <div>
           <div style={{ fontSize:'12px', color:'var(--text-dim)', fontWeight:'500', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'4px' }}>{dateStr}</div>
-          <h1 style={{ fontSize:'28px', fontWeight:'800', letterSpacing:'-0.02em' }}>Welcome back, {user?.name?.split(' ')[0] || 'User'}!</h1>
+          <h1 style={{ fontSize:'28px', fontWeight:'800', letterSpacing:'-0.02em' }}>{greeting}, {user?.name?.split(' ')[0] || 'User'}!</h1>
           <p style={{ color:'var(--text-dim)', marginTop:'4px' }}>Here's what's happening across {region === 'All' ? 'all regions' : region} today.</p>
         </div>
         <div style={{ display:'flex', gap:'10px' }}>
@@ -115,10 +115,10 @@ export default function Dashboard({ user, search, defaultRegion, onNavigate }) {
       {/* Top Stats */}
       <div className="grid-4" style={{ marginBottom:'24px' }}>
         {[
-          { label:'Active Projects', value:activeProjects.length, sub:`${filteredProjects.length} total`, color:'var(--purple-light)', icon:'📁' },
-          { label:'Pending Requests', value:pendingRequests.length, sub:'Awaiting review', color:'var(--yellow)', icon:'📩' },
-          { label:'Team Capacity', value:Math.round(capacityData.reduce((a,b)=>a+b.allocated,0)/(capacityData.length||1)) + '%', sub:'Avg utilization', color:'var(--green)', icon:'📈' },
-          { label:'Overdue Tasks', value:overdueTasks.length, sub:'Requires attention', color:'var(--red)', icon:'⚠️' },
+          { label:'Avg Productivity',   value:`${avgProductivity}%`, sub:'Based on output quality', color:getProductivityColor(avgProductivity), icon:'📊' },
+          { label:'High Performers',    value:highPerformers,        sub:'Score above 80%',       color:'var(--green)',        icon:'🏆' },
+          { label:'Active Projects',    value:activeCount,           sub:`${filteredProjects.length} total projects`, color:'var(--purple-light)', icon:'📁' },
+          { label:'Incentive Pool',     value:totalIncentivePoints,  sub:'Total points earned',   color:'var(--yellow)',       icon:'🎯' },
         ].map((s,i) => (
           <div key={i} className="card" style={{ padding:'20px', display:'flex', alignItems:'center', gap:'16px' }}>
              <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:'var(--bg-hover)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'20px' }}>{s.icon}</div>
@@ -132,89 +132,114 @@ export default function Dashboard({ user, search, defaultRegion, onNavigate }) {
       </div>
 
       <div className="grid-2-1" style={{ gap:'24px', marginBottom:'24px' }}>
-        {/* Resource Allocation Chart */}
+        {/* Productivity Chart */}
         <div className="card" style={{ padding:'24px' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'20px' }}>
             <div>
-              <h3 style={{ fontSize:'16px', fontWeight:'700' }}>Resource Allocation</h3>
-              <p style={{ fontSize:'12px', color:'var(--text-dim)' }}>Current workload per team member</p>
+              <h3 style={{ fontSize:'16px', fontWeight:'700' }}>Productivity Distribution</h3>
+              <p style={{ fontSize:'12px', color:'var(--text-dim)' }}>Performance scores per team member</p>
             </div>
             <button onClick={() => onNavigate('manager')} style={{ fontSize:'11px', color:'var(--purple-light)', background:'transparent', border:'none', cursor:'pointer', fontWeight:'600' }}>View Details →</button>
           </div>
 
           <div style={{ height:'240px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={capacityData} barSize={16}>
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill:'var(--text-dim)', fontSize:11 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill:'var(--text-dim)', fontSize:11 }} tickFormatter={v => v+'%'} />
-                <Tooltip content={<CT />} cursor={{ fill:'var(--bg-hover)', opacity:0.4 }} />
-                <Bar dataKey="allocated" name="Allocated" fill="var(--purple)" radius={[4,4,0,0]} />
-                <Bar dataKey="available" name="Available" fill="var(--bg-hover)" radius={[4,4,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {productivityChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={productivityChartData} barSize={20}>
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill:'var(--text-dim)', fontSize:11 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill:'var(--text-dim)', fontSize:11 }} tickFormatter={v => v+'%'} />
+                  <Tooltip content={<CT />} cursor={{ fill:'var(--bg-hover)', opacity:0.4 }} />
+                  <Bar dataKey="value" name="Productivity" radius={[4,4,0,0]}>
+                    {productivityChartData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'var(--text-dim)', fontSize:'12px' }}>No performance data available.</div>
+            )}
           </div>
         </div>
 
-        {/* Quick Actions / Notifications */}
+        {/* Top Performers Leaderboard */}
         <div className="card" style={{ padding:'24px' }}>
-          <h3 style={{ fontSize:'16px', fontWeight:'700', marginBottom:'16px' }}>Quick Actions</h3>
-          <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
-            {[
-              { label:'Assign New Task', action:()=>onNavigate('projects'), icon:'➕', desc:'Create and assign tasks' },
-              { label:'Team Performance', action:()=>onNavigate('manager'), icon:'🏆', desc:'Review productivity' },
-              { label:'Resource Reports', action:()=>onNavigate('analytics'), icon:'📊', desc:'Export utilization data' },
-              { label:'Update Schedule', action:()=>onNavigate('calendar'), icon:'📅', desc:'Adjust project timelines' },
-            ].map((a,i) => (
-              <div key={i} onClick={a.action} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'12px', borderRadius:'10px', background:'var(--bg-hover)', border:'1px solid var(--border)', cursor:'pointer', transition:'transform 0.2s' }} className="hover-scale">
-                <div style={{ fontSize:'18px' }}>{a.icon}</div>
-                <div>
-                  <div style={{ fontSize:'13px', fontWeight:'600' }}>{a.label}</div>
-                  <div style={{ fontSize:'10px', color:'var(--text-dim)' }}>{a.desc}</div>
+          <h3 style={{ fontSize:'16px', fontWeight:'700', marginBottom:'16px' }}>🏆 Productivity Leaderboard</h3>
+          <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+            {topPerformers.length > 0 ? topPerformers.map((p,i) => {
+              const score = parseFloat(p.productivity_score)||0;
+              return (
+                <div key={i} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'12px', borderRadius:'10px', background:'var(--bg-hover)', border:'1px solid var(--border)' }}>
+                  <div style={{ width:'32px', height:'32px', borderRadius:'50%', background:'var(--purple-dim)', color:'var(--purple-light)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:'700' }}>{p.name?.[0]}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:'13px', fontWeight:'600' }}>{p.name}</div>
+                    <div style={{ display:'flex', alignItems:'center', gap:'6px', marginTop:'4px' }}>
+                       <div style={{ flex:1, height:'4px', background:'var(--border)', borderRadius:'2px' }}>
+                          <div style={{ height:'100%', width:`${score}%`, background:getProductivityColor(score), borderRadius:'2px' }} />
+                       </div>
+                       <span style={{ fontSize:'11px', fontWeight:'800', color:getProductivityColor(score), fontFamily:'var(--font-mono)' }}>{score.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize:'18px' }}>{i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : '✨'}</div>
                 </div>
-              </div>
-            ))}
+              );
+            }) : (
+              <div style={{ color:'var(--text-dim)', fontSize:'12px' }}>No performance data yet.</div>
+            )}
           </div>
+          <button className="btn-secondary" style={{ width:'100%', marginTop:'16px', fontSize:'12px' }} onClick={() => onNavigate('team')}>View Full Team</button>
         </div>
       </div>
 
-      {/* Productivity Leaderboard */}
-      <div className="card" style={{ padding:'24px' }}>
-         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'20px' }}>
-            <div>
-              <h3 style={{ fontSize:'16px', fontWeight:'700' }}>High Performers</h3>
-              <p style={{ fontSize:'12px', color:'var(--text-dim)' }}>Top productivity scores this month</p>
-            </div>
-            <div style={{ display:'flex', gap:'8px' }}>
-               <div style={{ fontSize:'11px', color:'var(--green)', background:'var(--green-dim)', padding:'4px 8px', borderRadius:'4px', fontWeight:'600' }}>On Track</div>
-            </div>
-          </div>
+      {/* Critical Items Section */}
+      {urgentProjects.length > 0 && (
+        <div className="card" style={{ padding:'24px', borderLeft:'4px solid var(--red)', marginBottom:'24px' }}>
+           <h3 style={{ fontSize:'16px', fontWeight:'700', color:'var(--red)', marginBottom:'12px' }}>⚠️ Critical Deadlines</h3>
+           <div className="grid-3" style={{ gap:'16px' }}>
+              {urgentProjects.map(p => (
+                <div key={p.id} style={{ padding:'12px', background:'var(--bg-hover)', borderRadius:'8px', border:'1px solid var(--border)' }}>
+                   <div style={{ fontSize:'13px', fontWeight:'600' }}>{p.name}</div>
+                   <div style={{ fontSize:'11px', color:'var(--red)', marginTop:'4px' }}>Due: {new Date(p.deadline).toLocaleDateString()}</div>
+                </div>
+              ))}
+           </div>
+        </div>
+      )}
 
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:'16px' }}>
-             {productivity
-               .filter(p => region === 'All' || p.region === region)
-               .sort((a,b) => (b.productivity_score||0) - (a.productivity_score||0))
-               .slice(0, 4)
-               .map((p,i) => (
-                 <div key={i} style={{ padding:'16px', borderRadius:'12px', border:'1px solid var(--border)', background:'var(--bg-card)' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'12px' }}>
-                       <div style={{ width:'32px', height:'32px', borderRadius:'50%', background:'var(--purple-dim)', color:'var(--purple-light)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:'700' }}>{p.name?.[0]}</div>
-                       <div>
-                          <div style={{ fontSize:'13px', fontWeight:'600' }}>{p.name}</div>
-                          <div style={{ fontSize:'10px', color:'var(--text-dim)' }}>{p.role}</div>
-                       </div>
-                    </div>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
-                       <div>
-                          <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'2px' }}>Score</div>
-                          <div style={{ fontSize:'20px', fontWeight:'800', color:getProductivityColor(p.productivity_score), fontFamily:'var(--font-mono)' }}>{p.productivity_score}%</div>
-                       </div>
-                       <div style={{ fontSize:'18px' }}>{i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : '✨'}</div>
-                    </div>
-                 </div>
-               ))
-             }
-             {productivity.length === 0 && <div style={{ color:'var(--text-dim)', fontSize:'13px', padding:'20px' }}>No performance data available.</div>}
-          </div>
+      {/* Dashboard Grid */}
+      <div className="grid-2-1" style={{ gap:'24px' }}>
+        <div className="card" style={{ padding:'24px' }}>
+           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px' }}>
+              <h3 style={{ fontSize:'16px', fontWeight:'700' }}>Pending Operational Requests</h3>
+              <span className="badge badge-yellow">{pendingCount} Waiting</span>
+           </div>
+           <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+              {requests.filter(r => r.status === 'Pending').slice(0,4).map(r => (
+                <div key={r.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px', background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px' }}>
+                   <div>
+                      <div style={{ fontSize:'13px', fontWeight:'600' }}>{r.member_name} <span style={{ fontWeight:'400', color:'var(--text-dim)' }}>requested</span> {r.type}</div>
+                      <div style={{ fontSize:'11px', color:'var(--text-dim)', marginTop:'2px' }}>{r.title}</div>
+                   </div>
+                   <button onClick={() => onNavigate('requests')} className="btn-secondary" style={{ padding:'4px 10px', fontSize:'11px' }}>Review</button>
+                </div>
+              ))}
+              {pendingCount === 0 && <div style={{ color:'var(--text-dim)', fontSize:'12px', padding:'10px' }}>No pending requests.</div>}
+           </div>
+        </div>
+
+        <div className="card" style={{ padding:'24px' }}>
+           <h3 style={{ fontSize:'16px', fontWeight:'700', marginBottom:'16px' }}>Quick Actions</h3>
+           <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+              {[
+                { label:'Manager Control', action:()=>onNavigate('manager'), icon:'🛡️' },
+                { label:'Team Analytics', action:()=>onNavigate('analytics'), icon:'📈' },
+                { label:'Calendar', action:()=>onNavigate('calendar'), icon:'📅' },
+              ].map((a,i) => (
+                <button key={i} onClick={a.action} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'12px', borderRadius:'10px', background:'var(--bg-hover)', border:'1px solid var(--border)', cursor:'pointer', width:'100%', textAlign:'left' }}>
+                  <span style={{ fontSize:'18px' }}>{a.icon}</span>
+                  <span style={{ fontSize:'13px', fontWeight:'600' }}>{a.label}</span>
+                </button>
+              ))}
+           </div>
+        </div>
       </div>
     </div>
   );
