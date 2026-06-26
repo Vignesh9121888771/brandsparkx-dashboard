@@ -37,6 +37,14 @@ const register = async (req, res, next) => {
       { expiresIn: '7d' }
     );
 
+    // Audit log
+    try {
+      await db.query(
+        'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
+        [user.id, 'REGISTER', 'users', `Employee registered: ${user.email}`]
+      );
+    } catch (e) { console.error('Audit log failed:', e.message); }
+
     res.status(201).json({ success: true, token, user });
   } catch (err) {
     console.error('Registration error:', err);
@@ -68,6 +76,14 @@ const login = async (req, res, next) => {
       JWT_SECRET,
       { expiresIn: '7d' }
     );
+
+    // Audit log
+    try {
+      await db.query(
+        'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
+        [user.id, 'LOGIN', 'users', `User logged in: ${user.email}`]
+      );
+    } catch (e) { console.error('Audit log failed:', e.message); }
 
     res.json({
       success: true, token,
@@ -135,6 +151,15 @@ const registerManager = async (req, res, next) => {
       { id: user.id, name: user.name, email: user.email, role: user.role, region: user.region },
       JWT_SECRET, { expiresIn: '7d' }
     );
+
+    // Audit log
+    try {
+      await db.query(
+        'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
+        [user.id, 'REGISTER_MGR', 'users', `Manager registered: ${user.email}`]
+      );
+    } catch (e) { console.error('Audit log failed:', e.message); }
+
     res.status(201).json({ success: true, token, user });
   } catch (err) {
     console.error('Manager Registration error:', err);
