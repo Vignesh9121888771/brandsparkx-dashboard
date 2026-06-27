@@ -1,7 +1,18 @@
 import axios from 'axios';
 
+// On Vercel/Production, the API is relative or at the specific Render domain.
+// We use a robust detection logic here.
+const getBaseURL = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:5000/api';
+  }
+  // Default to the production backend on Render
+  return 'https://brandsparkx-dashboard.onrender.com/api';
+};
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: getBaseURL(),
 });
 
 // Auto-attach token to every request
@@ -19,7 +30,7 @@ API.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('bsx_token');
       localStorage.removeItem('bsx_user');
-      if (window.location.pathname !== '/') {
+      if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
         window.location.href = '/';
       }
     }

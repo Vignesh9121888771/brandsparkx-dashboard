@@ -77,7 +77,17 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+    const getBaseURL = () => {
+      if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'http://localhost:5000/api';
+      }
+      return 'https://brandsparkx-dashboard.onrender.com/api';
+    };
+
+    const API_BASE = getBaseURL();
+
     const check = async () => {
       try {
         const res  = await fetch(`${API_BASE}/projects`, {
