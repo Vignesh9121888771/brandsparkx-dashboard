@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { getCapacity, getTasks, getProductivitySummary } from '../services/api';
+import { getCapacity, getTasks } from '../services/api';
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const getProductivityStatus = (score) => {
   const s = parseFloat(score) || 0;
@@ -9,10 +12,19 @@ const getProductivityStatus = (score) => {
   return              { label:'No Data', color:'var(--text-dim)', bg:'var(--bg-hover)' };
 };
 
-export default function TeamCapacity({ search, defaultRegion }) {
+const getScoreColor = (score) => {
+  const s = parseFloat(score) || 0;
+  if (s >= 80) return 'var(--green)';
+  if (s >= 50) return 'var(--yellow)';
+  if (s >  0)  return 'var(--red)';
+  return 'var(--text-dim)';
+};
+
+export default function TeamCapacity({ role, search, defaultRegion }) {
   const [members,      setMembers]      = useState([]);
   const [tasks,        setTasks]        = useState([]);
   const [filter,       setFilter]       = useState('All');
+  const [regionFilter, setRegionFilter] = useState(defaultRegion || 'All');
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState(null);
 
@@ -20,9 +32,11 @@ export default function TeamCapacity({ search, defaultRegion }) {
     const load = async () => {
       try {
         setLoading(true);
+        const token = localStorage.getItem('bsx_token');
+
         // Get productivity summary + capacity + tasks
         const [prodRes, capRes, taskRes] = await Promise.all([
-          getProductivitySummary(),
+          axios.get(`${API_URL}/tasks/productivity/summary`, { headers:{ Authorization:`Bearer ${token}` } }),
           getCapacity(),
           getTasks(),
         ]);
@@ -35,54 +49,73 @@ export default function TeamCapacity({ search, defaultRegion }) {
         // Merge productivity data with capacity data
         const merged = capData.map(m => {
           const prod = prodData.find(p => p.id === m.id) || {};
-          return { ...m, ...prod };
+          return {
+            ...m,
+            productivity_score: prod.productivity_score || m.productivity_score || 0,
+            incentive_points:   prod.incentive_points   || m.incentive_points   || 0,
+            total_tasks:        prod.total_tasks        || 0,
+            completed_tasks:    prod.completed_tasks    || 0,
+            on_time_tasks:      prod.on_time_tasks      || 0,
+            avg_quality:        prod.avg_quality        || null,
+            overtime_submissions: prod.overtime_submissions || 0,
+          };
         });
-
         setMembers(merged);
         setLoading(false);
       } catch (err) {
-        console.error('Failed to load team data:', err);
-        setError('Failed to load team capacity data');
+        console.error('TeamCapacity fetch error:', err);
+        setError('Failed to load team capacity.');
         setLoading(false);
       }
     };
     load();
   }, []);
 
-  const filtered = members.filter(m => {
-    const matchesSearch = !search || m.name?.toLowerCase().includes(search.toLowerCase()) || m.role?.toLowerCase().includes(search.toLowerCase());
-    const matchesRegion = defaultRegion === 'All' || !defaultRegion || m.region === defaultRegion;
+  const filters = ['All','High','Medium','Low','No Data'];
 
-    if (filter === 'All') return matchesSearch && matchesRegion;
-    if (filter === 'High Load') return matchesSearch && matchesRegion && (parseInt(m.allocated_percent) || 0) > 80;
-    if (filter === 'Available') return matchesSearch && matchesRegion && (parseInt(m.available_percent) || 0) > 20;
-    if (filter === 'High Performers') return matchesSearch && matchesRegion && (parseFloat(m.productivity_score) || 0) >= 80;
-    return matchesSearch && matchesRegion;
+  const filtered = members.filter(m => {
+    const status      = getProductivityStatus(m.productivity_score);
+    const matchFilter = filter === 'All' || status.label === filter;
+    const matchRegion = regionFilter === 'All' || m.region === regionFilter;
+    const matchSearch = !search || m.name?.toLowerCase().includes(search.toLowerCase()) || m.role?.toLowerCase().includes(search.toLowerCase());
+    return matchFilter && matchRegion && matchSearch;
   });
 
+  // Summary stats
   const avgProductivity = members.length
-    ? Math.round(members.reduce((acc, m) => acc + (parseFloat(m.productivity_score) || 0), 0) / members.length)
+    ? Math.round(members.reduce((s,m) => s + (parseFloat(m.productivity_score)||0), 0) / members.length)
     : 0;
-  const highPerformers = members.filter(m => (parseFloat(m.productivity_score) || 0) >= 80).length;
-  const topPerformer   = [...members].sort((a,b) => (parseFloat(b.productivity_score)||0) - (parseFloat(a.productivity_score)||0))[0];
-  const totalIncentive = members.reduce((acc, m) => acc + (parseInt(m.incentive_points) || 0), 0);
+  const topPerformer  = [...members].sort((a,b) => (b.productivity_score||0) - (a.productivity_score||0))[0];
+  const totalIncentive = members.reduce((s,m) => s + (m.incentive_points||0), 0);
+  const highPerformers = members.filter(m => (m.productivity_score||0) >= 80).length;
 
-  const filters = ['All', 'High Load', 'Available', 'High Performers'];
-
-  if (loading) return <div className="loading-state">Analyzing team performance...</div>;
-  if (error)   return <div className="error-state">{error}</div>;
+  if (loading) return <div className="page" style={{ textAlign:'center', padding:'100px' }}>Loading team capacity...</div>;
+  if (error)   return <div className="page" style={{ textAlign:'center', padding:'100px', color:'var(--red)' }}>{error}</div>;
 
   return (
     <div className="page">
-      <div className="page-header">
-        <h1>Team Capacity & Productivity</h1>
-        <p>Real-time resource allocation and performance tracking.</p>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'24px' }}>
+        <div>
+          <h1 style={{ fontSize:'24px', fontWeight:'700', marginBottom:'4px' }}>Team Productivity</h1>
+          <p style={{ color:'var(--text-dim)', fontSize:'14px' }}>Real productivity scores based on output quality, not hours worked.</p>
+        </div>
+        <div style={{ display:'flex', gap:'6px' }}>
+          {['All','India','UAE'].map(r => (
+            <button key={r} onClick={() => setRegionFilter(r)} style={{
+              padding:'6px 14px', borderRadius:'20px', border:'1px solid', fontSize:'11px', fontWeight:'500', cursor:'pointer',
+              borderColor: regionFilter===r ? 'var(--purple)' : 'var(--border)',
+              background:  regionFilter===r ? 'var(--purple-dim)' : 'transparent',
+              color:       regionFilter===r ? 'var(--purple-light)' : 'var(--text-dim)',
+            }}>{r}</button>
+          ))}
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid-4" style={{ marginBottom: '24px' }}>
+      {/* Summary metric cards */}
+      <div className="grid-4" style={{ marginBottom:'20px' }}>
         {[
-          { label:'Avg Productivity', value:avgProductivity+'%', sub:'Team efficiency', color:'var(--purple)',      icon:'📊' },
+          { label:'Avg Productivity', value:`${avgProductivity}%`, sub:'Team average', color:getScoreColor(avgProductivity), icon:'📊' },
           { label:'High Performers',  value:highPerformers,        sub:'Score ≥ 80%',  color:'var(--green)',        icon:'🏆' },
           { label:'Top Performer',    value:topPerformer?.name?.split(' ')[0]||'—', sub:`${topPerformer?.productivity_score||0}% score`, color:'var(--purple-light)', icon:'⭐' },
           { label:'Total Points',     value:totalIncentive,        sub:'Incentive pool', color:'var(--yellow)',       icon:'🎯' },

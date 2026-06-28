@@ -1,12 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { 
-  getProjects, getMembers, getCapacity, getRequests,
+  getProjects, getMembers, getCapacity, getTasks, getRequests, 
   updateRequest, createTask, getAISuggestion, getPendingProgressUpdates,
   reviewProgressUpdate, createBulkMembers
 } from '../services/api';
 
-
-
+const PRIORITY_COLORS = { Low:'var(--green)', Medium:'var(--yellow)', High:'var(--orange)', Critical:'var(--red)' };
+const STATUS_COLORS   = { Pending:'var(--yellow)', Approved:'var(--green)', Rejected:'var(--red)' };
 const EMPTY_MEMBER    = { name:'', email:'', role:'', region:'India', skills:'' };
 
 // ── Star Rating Component ───────────────────────────────────────
@@ -30,9 +30,10 @@ const StarRating = ({ value, onChange }) => (
   </div>
 );
 
-export default function ManagerPanel() {
+export default function ManagerPanel({ user }) {
   const [tab,            setTab]            = useState('requests');
   const [requests,       setRequests]       = useState([]);
+  const [tasks,          setTasks]          = useState([]);
   const [members,        setMembers]        = useState([]);
   const [projects,       setProjects]       = useState([]);
   const [capacity,       setCapacity]       = useState([]);
@@ -51,12 +52,14 @@ export default function ManagerPanel() {
   const [error,          setError]          = useState(null);
   const [approvalResult, setApprovalResult] = useState({});
 
-  const loadAll = useCallback(async () => {
+  const loadAll = async () => {
+    setLoading(true);
     try {
-      const [reqRes,  memRes, projRes, capRes, updRes] = await Promise.all([
-        getRequests(), getMembers(), getProjects(), getCapacity(), getPendingProgressUpdates()
+      const [reqRes, taskRes, memRes, projRes, capRes, updRes] = await Promise.all([
+        getRequests(), getTasks(), getMembers(), getProjects(), getCapacity(), getPendingProgressUpdates()
       ]);
       setRequests(reqRes.data.data       || []);
+      setTasks(taskRes.data.data         || []);
       setMembers(memRes.data.data        || []);
       setProjects(projRes.data.data      || []);
       setPendingUpdates(updRes.data.data || []);
@@ -70,15 +73,15 @@ export default function ManagerPanel() {
           ? `${o.name} is overloaded (${o.allocated_percent}%) — consider shifting work to ${match.name} (${match.allocated_percent}% allocated)`
           : `${o.name} is over capacity (${o.allocated_percent}%). Consider offloading tasks.`;
       }));
+      setLoading(false);
     } catch (err) {
       console.error('Manager panel fetch error:', err);
       setError('Failed to load manager data.');
-    } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { loadAll(); }, []);
 
   const handleRequest = async (id, status) => {
     try {
@@ -105,325 +108,456 @@ export default function ManagerPanel() {
       }
       await loadAll();
     } catch (err) {
-      alert(err.response?.data?.message || 'Review failed');
+      alert(err.response?.data?.message || 'Failed to review update');
     } finally {
       setReviewing(p => ({ ...p, [update_id]: false }));
     }
   };
 
-  const handleTaskCreate = async (e) => {
-    e.preventDefault();
+  const submitTask = async () => {
+    if (!taskForm.title || !taskForm.assigned_to) return alert('Title and assignee are required');
     try {
       await createTask(taskForm);
       setTaskForm({ title:'', assigned_to:'', project_id:'', priority:'Medium', due_date:'', estimated_hours:'', description:'' });
-      alert('Task assigned successfully!');
       loadAll();
-    } catch { alert('Failed to create task.'); }
+      alert('Task assigned successfully');
+    } catch { alert('Failed to assign task.'); }
   };
 
-  const handleAiSuggest = async () => {
-    if (!aiQuery.task_title || !aiQuery.required_role) return alert('Task title and role are required');
-    setAiLoading(true);
+  const askAI = async () => {
+    if (!aiQuery.task_title) return alert('Enter a task title');
+    setAiLoading(true); setAiResult('');
     try {
-      const res = await getAISuggestion({ ...aiQuery, members_context: capacity });
-      setAiResult(res.data.data);
-    } catch { setAiResult('Failed to get AI recommendation.'); }
-    setAiLoading(false);
+      const res = await getAISuggestion(aiQuery);
+      setAiResult(res.data.suggestion);
+    } catch {
+      setAiResult('AI service currently unavailable. Please try again later.');
+    } finally { setAiLoading(false); }
   };
 
-  const handleBulkSubmit = async () => {
+  const addRow    = () => setBulkMembers(b => [...b, { ...EMPTY_MEMBER }]);
+  const removeRow = (i) => setBulkMembers(b => b.filter((_,idx) => idx !== i));
+  const updateRow = (i,field,val) => setBulkMembers(b => b.map((m,idx) => idx===i ? {...m,[field]:val} : m));
+
+  const submitBulk = async () => {
+    const valid = bulkMembers.filter(m => m.name && m.email && m.role);
+    if (!valid.length) return setBulkStatus('error:Fill at least one complete row');
+    setBulkStatus('loading');
     try {
-      setBulkStatus('processing');
-      await createBulkMembers(bulkMembers);
-      setBulkStatus('success');
+      const res = await createBulkMembers({ members: valid });
+      setBulkStatus(`success:Added ${res.data.count} member(s) successfully`);
       setBulkMembers([{ ...EMPTY_MEMBER }]);
       loadAll();
-    } catch { setBulkStatus('error'); }
+    } catch (e) {
+      setBulkStatus(`error:${e.response?.data?.message || 'Failed to add members'}`);
+    }
   };
 
-  if (loading) return <div className="loading-state">Accessing management console...</div>;
-  if (error)   return <div className="error-state">{error}</div>;
+  const exportCSV = () => {
+    const rows = [['Name','Email','Role','Region','Productivity Score','Incentive Points'],...members.map(m => {
+      return [m.name, m.email, m.role, m.region, m.productivity_score||0, m.incentive_points||0];
+    })];
+    const csv  = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type:'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'brandsparkx-productivity.csv'; a.click();
+  };
+
+  const TABS = [
+    ['requests', 'Requests'],
+    ['progress', `Progress ${pendingUpdates.length > 0 ? `(${pendingUpdates.length})` : ''}`],
+    ['members',  'Add Members'],
+    ['assign',   'Assign Task'],
+    ['suggest',  'Suggestions'],
+    ['ai',       '✨ AI'],
+  ];
+
+  if (loading) return <div className="page" style={{ textAlign:'center', padding:'100px' }}>Loading manager panel...</div>;
+  if (error)   return <div className="page" style={{ textAlign:'center', padding:'100px', color:'var(--red)' }}>{error}</div>;
 
   return (
     <div className="page">
-      <div className="page-header" style={{ marginBottom:'24px' }}>
+      <div style={{ marginBottom:'24px', display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
         <div>
-          <h1>Managerial Control Panel</h1>
-          <p>System-wide task assignment, resource redistribution, and AI insights.</p>
+          <h1 style={{ fontSize:'24px', fontWeight:'700', marginBottom:'4px' }}>Manager Control Panel</h1>
+          <p style={{ color:'var(--text-dim)', fontSize:'14px' }}>Approve requests, track productivity, assign tasks and AI-assisted planning.</p>
         </div>
-        <div style={{ display:'flex', gap:'8px' }}>
-           <div className="badge badge-purple" style={{ textTransform:'none' }}>🛡️ High Clearance Access</div>
-        </div>
+        <button className="btn btn-ghost" style={{ fontSize:'11px' }} onClick={exportCSV}>📊 Export Productivity CSV</button>
       </div>
 
       {/* Tabs */}
-      <div className="tabs" style={{ marginBottom:'24px' }}>
-        <button className={`tab-btn ${tab==='requests'?'active':''}`} onClick={()=>setTab('requests')}>
-          Inbox {pendingUpdates.length > 0 && <span className="badge badge-red">{pendingUpdates.length}</span>}
-        </button>
-        <button className={`tab-btn ${tab==='assign'?'active':''}`} onClick={()=>setTab('assign')}>Assign Tasks</button>
-        <button className={`tab-btn ${tab==='onboarding'?'active':''}`} onClick={()=>setTab('onboarding')}>Onboarding</button>
-        <button className={`tab-btn ${tab==='ai'?'active':''}`} onClick={()=>setTab('ai')}>AI Insights ✦</button>
+      <div style={{ display:'flex', gap:'3px', marginBottom:'16px', background:'var(--bg-card)', padding:'3px', borderRadius:'8px', width:'fit-content', border:'1px solid var(--border)', flexWrap:'wrap' }}>
+        {TABS.map(([id,label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            padding:'6px 14px', border:'none', borderRadius:'6px',
+            fontSize:'11px', fontWeight:'500', cursor:'pointer',
+            background: tab===id ? (id==='progress' && pendingUpdates.length>0 ? 'var(--red)' : 'var(--purple)') : 'transparent',
+            color: tab===id ? '#fff' : (id==='progress' && pendingUpdates.length>0 ? 'var(--red)' : 'var(--text-dim)'),
+          }}>{label}</button>
+        ))}
       </div>
 
-      {/* ── Tab: Inbox (Progress Updates) ────────────────────────── */}
+      {/* ── REQUESTS ─────────────────────────────────────────────── */}
       {tab === 'requests' && (
-        <div className="grid-1">
-          {pendingUpdates.length === 0 && (
-            <div className="card" style={{ padding:'60px 20px', textAlign:'center' }}>
-               <div style={{ fontSize:'32px', marginBottom:'16px' }}>📬</div>
-               <h3 style={{ marginBottom:'8px' }}>Your inbox is empty</h3>
-               <p style={{ color:'var(--text-dim)', fontSize:'13px' }}>All pending progress updates have been reviewed.</p>
-            </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+          {requests.length === 0 && (
+            <div className="card" style={{ textAlign:'center', padding:'40px', color:'var(--text-dim)' }}>✅ All clear — no requests found</div>
           )}
-
-          {pendingUpdates.map(u => (
-            <div key={u.id} className="card" style={{ padding:'0', overflow:'hidden', marginBottom:'16px' }}>
-              <div style={{ padding:'20px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', background:'rgba(255,255,255,0.01)' }}>
-                 <div style={{ display:'flex', gap:'16px', alignItems:'center' }}>
-                    <div className="avatar">{u.member_name[0]}</div>
-                    <div>
-                       <div style={{ fontSize:'14px', fontWeight:'700' }}>{u.member_name} <span style={{ fontWeight:'400', color:'var(--text-dim)', margin:'0 4px' }}>→</span> {u.task_title}</div>
-                       <div style={{ fontSize:'11px', color:'var(--text-dim)', marginTop:'2px' }}>{u.member_role} · {u.project_name || 'General'}</div>
-                    </div>
-                 </div>
-                 <div style={{ textAlign:'right' }}>
-                    <div style={{ fontSize:'18px', fontWeight:'800', color:'var(--purple-light)', fontFamily:'var(--font-mono)' }}>{u.current_progress}% <span style={{ fontSize:'12px', fontWeight:'400', color:'var(--text-dim)' }}>→</span> {u.progress}%</div>
-                    <div style={{ fontSize:'10px', color:'var(--text-dim)', marginTop:'2px' }}>Proposed Progress Update</div>
-                 </div>
+          {requests.map(r => (
+            <div key={r.id} className="card" style={{ padding:'16px 20px' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'10px' }}>
+                <div>
+                  <div style={{ fontSize:'14px', fontWeight:'600' }}>{r.title || 'Untitled'} — <span style={{ color:'var(--purple-light)' }}>{r.type || 'Other'}</span></div>
+                  <div style={{ fontSize:'12px', color:'var(--text-dim)', marginTop:'2px' }}>
+                    {r.member_name || 'Unknown'} · {r.member_role || 'N/A'} · {new Date(r.created_at).toLocaleDateString('en-IN')}
+                  </div>
+                </div>
+                <span className="badge" style={{ background:r.status==='Pending'?'var(--yellow-dim)':r.status==='Approved'?'var(--green-dim)':'var(--red-dim)', color:STATUS_COLORS[r.status]||'var(--text-dim)' }}>{r.status}</span>
               </div>
-
-              <div style={{ padding:'20px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'30px' }}>
-                 <div>
-                    <div style={{ fontSize:'11px', fontWeight:'600', color:'var(--text-dim)', textTransform:'uppercase', marginBottom:'8px' }}>Submission Note</div>
-                    <div style={{ fontSize:'13px', lineHeight:'1.5', padding:'12px', background:'var(--bg-hover)', borderRadius:'8px', border:'1px solid var(--border)' }}>
-                      {u.note}
-                    </div>
-                    {u.is_overtime && (
-                      <div style={{ marginTop:'10px', display:'inline-flex', alignItems:'center', gap:'6px', padding:'4px 10px', borderRadius:'20px', background:'var(--yellow-dim)', color:'var(--yellow)', fontSize:'11px', fontWeight:'700' }}>
-                        ⏰ Overtime Submission (Bonus Eligible)
-                      </div>
-                    )}
-                 </div>
-
-                 <div>
-                    <div style={{ fontSize:'11px', fontWeight:'600', color:'var(--text-dim)', textTransform:'uppercase', marginBottom:'8px' }}>Manager Review</div>
-                    <textarea
-                      placeholder="Add a comment for the team member..."
-                      value={reviewNote[u.id] || ''}
-                      onChange={e => setReviewNote(p => ({...p, [u.id]: e.target.value}))}
-                      style={{ width:'100%', padding:'10px', borderRadius:'8px', background:'var(--bg-card)', border:'1px solid var(--border)', fontSize:'12px', height:'60px', resize:'none', marginBottom:'12px' }}
-                    />
-
-                    <div style={{ marginBottom:'20px' }}>
-                      <div style={{ fontSize:'11px', color:'var(--text-dim)', marginBottom:'6px' }}>Quality of Work</div>
-                      <StarRating value={qualityScore[u.id]} onChange={val => setQualityScore(p => ({...p, [u.id]:val}))} />
-                    </div>
-
-                    <div style={{ display:'flex', gap:'10px' }}>
-                       <button className="btn-secondary" style={{ flex:1, color:'var(--red)' }} disabled={reviewing[u.id]} onClick={()=>handleReview(u.id, 'reject')}>Reject</button>
-                       <button className="btn-primary" style={{ flex:2 }} disabled={reviewing[u.id]} onClick={()=>handleReview(u.id, 'approve')}>
-                          {reviewing[u.id] ? 'Reviewing...' : 'Approve & Update'}
-                       </button>
-                    </div>
-
-                    {approvalResult[u.id] && (
-                      <div style={{ marginTop:'12px', padding:'10px', borderRadius:'8px', background:'var(--green-dim)', border:'1px solid var(--green)', color:'var(--green)', fontSize:'11px' }}>
-                        ✅ Approved! Employee earned <b>+{approvalResult[u.id].incentive_points_earned} points</b>. Productivity: <b>{approvalResult[u.id].productivity_score}%</b>
-                      </div>
-                    )}
-                 </div>
-              </div>
+              {r.description && (
+                <div style={{ fontSize:'12px', color:'var(--text-secondary)', padding:'10px', background:'var(--bg-hover)', borderRadius:'8px', marginBottom:'12px' }}>{r.description}</div>
+              )}
+              {r.status === 'Pending' && (
+                <div style={{ display:'flex', gap:'8px' }}>
+                  <button className="btn btn-success" style={{ fontSize:'11px', padding:'5px 14px' }} onClick={() => handleRequest(r.id,'Approved')}>✓ Approve</button>
+                  <button className="btn btn-danger"  style={{ fontSize:'11px', padding:'5px 14px' }} onClick={() => handleRequest(r.id,'Rejected')}>✗ Reject</button>
+                </div>
+              )}
             </div>
           ))}
+        </div>
+      )}
 
-          {/* Legacy Request Inbox */}
-          <div style={{ marginTop:'30px' }}>
-            <h3 style={{ fontSize:'14px', marginBottom:'16px', color:'var(--text-dim)' }}>Leave & Resource Requests</h3>
-            {requests.filter(r => r.status === 'Pending').map(r => (
-              <div key={r.id} className="card" style={{ padding:'16px', display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
-                 <div>
-                    <div style={{ fontSize:'13px', fontWeight:'600' }}>{r.member_name} <span style={{ fontWeight:'400', color:'var(--text-dim)' }}>requested</span> {r.type}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{r.title} · {new Date(r.start_date).toLocaleDateString()}</div>
-                 </div>
-                 <div style={{ display:'flex', gap:'8px' }}>
-                    <button className="btn-secondary" style={{ padding:'5px 12px', fontSize:'11px' }} onClick={()=>handleRequest(r.id, 'Rejected')}>Reject</button>
-                    <button className="btn-primary"   style={{ padding:'5px 12px', fontSize:'11px' }} onClick={()=>handleRequest(r.id, 'Approved')}>Approve</button>
-                 </div>
+      {/* ── PROGRESS APPROVALS ────────────────────────────────────── */}
+      {tab === 'progress' && (
+        <div>
+          <div style={{ fontSize:'13px', color:'var(--text-dim)', marginBottom:'16px' }}>
+            Review progress updates from team members. Rate quality and approve — only then does progress update on the dashboard.
+          </div>
+          {pendingUpdates.length === 0 ? (
+            <div className="card" style={{ textAlign:'center', padding:'40px', color:'var(--text-dim)' }}>✅ No pending progress updates — all caught up!</div>
+          ) : pendingUpdates.map(u => (
+            <div key={u.id} className="card" style={{ marginBottom:'16px' }}>
+
+              {/* Header */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'14px' }}>
+                <div>
+                  <div style={{ fontSize:'14px', fontWeight:'600', marginBottom:'3px' }}>{u.task_title}</div>
+                  <div style={{ fontSize:'11px', color:'var(--text-dim)' }}>
+                    {u.project_name} · Submitted by <strong style={{ color:'var(--text-secondary)' }}>{u.member_name}</strong> ({u.member_role})
+                  </div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginTop:'2px' }}>
+                    {new Date(u.created_at).toLocaleString('en-IN')}
+                    {u.is_overtime && (
+                      <span style={{ marginLeft:'8px', color:'var(--yellow)', fontWeight:'600' }}>⏰ Overtime Submission</span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:'4px', alignItems:'flex-end' }}>
+                  <span style={{ fontSize:'10px', padding:'4px 10px', borderRadius:'20px', background:'var(--yellow-dim)', color:'var(--yellow)', border:'1px solid rgba(245,158,11,0.3)' }}>⏳ Pending Review</span>
+                  {u.productivity_score > 0 && (
+                    <span style={{ fontSize:'10px', color:'var(--purple-light)' }}>Current Productivity: {u.productivity_score}%</span>
+                  )}
+                </div>
               </div>
-            ))}
+
+              {/* Progress comparison */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'14px' }}>
+                <div style={{ padding:'12px', background:'var(--bg-hover)', borderRadius:'var(--radius-md)', border:'1px solid var(--border)' }}>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'6px', textTransform:'uppercase', letterSpacing:'0.06em' }}>Current Progress</div>
+                  <div style={{ fontSize:'24px', fontWeight:'800', color:'var(--text-secondary)', fontFamily:'var(--font-mono)', marginBottom:'8px' }}>{u.current_progress||0}%</div>
+                  <div className="progress-bar"><div className="progress-fill" style={{ width:`${u.current_progress||0}%`, background:'var(--text-dim)' }} /></div>
+                </div>
+                <div style={{ padding:'12px', background:'var(--purple-dim)', borderRadius:'var(--radius-md)', border:'1px solid rgba(124,58,237,0.3)' }}>
+                  <div style={{ fontSize:'10px', color:'var(--purple-light)', marginBottom:'6px', textTransform:'uppercase', letterSpacing:'0.06em' }}>Proposed Progress</div>
+                  <div style={{ fontSize:'24px', fontWeight:'800', color:'var(--purple-light)', fontFamily:'var(--font-mono)', marginBottom:'8px' }}>{u.progress}%</div>
+                  <div className="progress-bar"><div className="progress-fill" style={{ width:`${u.progress}%`, background:'var(--purple)' }} /></div>
+                </div>
+              </div>
+
+              {/* Evidence note */}
+              <div style={{ padding:'12px', background:'var(--bg-elevated)', borderRadius:'var(--radius-md)', border:'1px solid var(--border-light)', marginBottom:'14px' }}>
+                <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'6px', textTransform:'uppercase', letterSpacing:'0.06em' }}>Work Completed (Member's Report)</div>
+                <div style={{ fontSize:'13px', color:'var(--text-primary)', lineHeight:1.6, fontStyle:'italic' }}>"{u.note}"</div>
+              </div>
+
+              {/* Quality Rating — required for approval */}
+              <div style={{ padding:'14px', background:'var(--bg-hover)', borderRadius:'var(--radius-md)', border:'1px solid var(--border)', marginBottom:'14px' }}>
+                <div style={{ fontSize:'12px', fontWeight:'600', color:'var(--text-primary)', marginBottom:'8px' }}>
+                  Rate Quality of Work <span style={{ color:'var(--red)' }}>*</span>
+                  <span style={{ fontSize:'10px', color:'var(--text-dim)', fontWeight:'400', marginLeft:'8px' }}>Required to approve</span>
+                </div>
+                <StarRating
+                  value={qualityScore[u.id] || 0}
+                  onChange={val => setQualityScore(p => ({ ...p, [u.id]: val }))}
+                />
+                <div style={{ marginTop:'8px', fontSize:'10px', color:'var(--text-dim)' }}>
+                  This rating contributes 10% to the member's productivity score
+                </div>
+              </div>
+
+              {/* Incentive preview */}
+              {qualityScore[u.id] > 0 && (
+                <div style={{ padding:'10px 14px', background:'var(--green-dim)', borderRadius:'var(--radius-md)', border:'1px solid rgba(16,185,129,0.3)', marginBottom:'14px' }}>
+                  <div style={{ fontSize:'11px', color:'var(--green)', fontWeight:'600' }}>
+                    🏆 Estimated Incentive Points on Approval:
+                    {' '}+{5 + (qualityScore[u.id]===5?15:qualityScore[u.id]===4?10:qualityScore[u.id]===3?5:0) + (u.is_overtime?10:0)} pts
+                  </div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginTop:'2px' }}>
+                    Base: +5 · Quality bonus: +{qualityScore[u.id]===5?15:qualityScore[u.id]===4?10:qualityScore[u.id]===3?5:0}
+                    {u.is_overtime ? ' · Overtime bonus: +10' : ''}
+                  </div>
+                </div>
+              )}
+
+              {/* Manager note */}
+              <div style={{ marginBottom:'12px' }}>
+                <div style={{ fontSize:'11px', color:'var(--text-dim)', marginBottom:'4px' }}>Manager Note (optional)</div>
+                <input
+                  className="inp"
+                  placeholder="e.g. Great work! / Please provide more detail next time..."
+                  value={reviewNote[u.id] || ''}
+                  onChange={e => setReviewNote(p => ({ ...p, [u.id]: e.target.value }))}
+                />
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display:'flex', gap:'10px' }}>
+                <button
+                  className="btn btn-success"
+                  style={{ flex:1, padding:'10px' }}
+                  onClick={() => handleReview(u.id,'approve')}
+                  disabled={reviewing[u.id]}
+                >
+                  {reviewing[u.id] ? 'Processing...' : '✓ Approve & Apply Progress'}
+                </button>
+                <button
+                  className="btn btn-danger"
+                  style={{ flex:1, padding:'10px' }}
+                  onClick={() => handleReview(u.id,'reject')}
+                  disabled={reviewing[u.id]}
+                >
+                  {reviewing[u.id] ? 'Processing...' : '✗ Reject Update'}
+                </button>
+              </div>
+
+              {/* Approval result */}
+              {approvalResult[u.id] && (
+                <div style={{ marginTop:'12px', padding:'12px', background:'var(--green-dim)', borderRadius:'var(--radius-md)', border:'1px solid rgba(16,185,129,0.3)' }}>
+                  <div style={{ fontSize:'12px', color:'var(--green)', fontWeight:'600' }}>✅ Approved Successfully!</div>
+                  <div style={{ fontSize:'11px', color:'var(--text-secondary)', marginTop:'4px' }}>
+                    New Productivity Score: <strong>{approvalResult[u.id].productivity_score}%</strong> ·
+                    Points Earned: <strong>+{approvalResult[u.id].incentive_points_earned}</strong>
+                    {approvalResult[u.id].is_overtime && ' · ⏰ Overtime bonus applied'}
+                    {approvalResult[u.id].completed_on_time && ' · ✅ On-time bonus applied'}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── BULK ADD MEMBERS ──────────────────────────────────────── */}
+      {tab === 'members' && (
+        <div>
+          <div className="card" style={{ marginBottom:'12px' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'12px' }}>
+              <div className="card-title" style={{ marginBottom:0 }}>Add Team Members</div>
+              <button className="btn btn-ghost" style={{ fontSize:'11px' }} onClick={addRow}>+ Add Row</button>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'2fr 2fr 2fr 1fr 2fr 28px', gap:'6px', marginBottom:'6px', padding:'0 4px' }}>
+              {['Name *','Email *','Role *','Region','Skills',''].map(h => (
+                <div key={h} style={{ fontSize:'10px', color:'var(--text-dim)', textTransform:'uppercase', letterSpacing:'0.05em' }}>{h}</div>
+              ))}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'6px', maxHeight:'300px', overflowY:'auto' }}>
+              {bulkMembers.map((m,i) => (
+                <div key={i} style={{ display:'grid', gridTemplateColumns:'2fr 2fr 2fr 1fr 2fr 28px', gap:'6px', alignItems:'center' }}>
+                  <input className="inp" style={{ fontSize:'12px' }} placeholder='Full name'      value={m.name}   onChange={e => updateRow(i,'name',e.target.value)} />
+                  <input className="inp" style={{ fontSize:'12px' }} placeholder='Email'          value={m.email}  onChange={e => updateRow(i,'email',e.target.value)} />
+                  <input className="inp" style={{ fontSize:'12px' }} placeholder='Role'           value={m.role}   onChange={e => updateRow(i,'role',e.target.value)} />
+                  <select className="inp" style={{ fontSize:'12px' }} value={m.region} onChange={e => updateRow(i,'region',e.target.value)}>
+                    <option>India</option><option>UAE</option>
+                  </select>
+                  <input className="inp" style={{ fontSize:'12px' }} placeholder='React, Figma...' value={m.skills} onChange={e => updateRow(i,'skills',e.target.value)} />
+                  <button onClick={() => removeRow(i)} style={{ background:'var(--red-dim)', border:'1px solid var(--red)', color:'var(--red)', borderRadius:'4px', width:'24px', height:'24px', fontSize:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:'12px', display:'flex', alignItems:'center', gap:'10px' }}>
+              <button className="btn btn-primary" onClick={submitBulk}>Save {bulkMembers.length} Member{bulkMembers.length>1?'s':''}</button>
+              {bulkStatus.startsWith('success') && <div style={{ fontSize:'12px', color:'var(--green)' }}>✓ {bulkStatus.split(':')[1]}</div>}
+              {bulkStatus.startsWith('error')   && <div style={{ fontSize:'12px', color:'var(--red)'   }}>✕ {bulkStatus.split(':')[1]}</div>}
+              {bulkStatus === 'loading'          && <div className="spinner" />}
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-title">Current Members ({members.length})</div>
+            <div style={{ maxHeight:'250px', overflowY:'auto' }}>
+              {members.map(m => (
+                <div key={m.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
+                  <div className="avatar" style={{ fontSize:'10px' }}>{m.name.split(' ').map(n=>n[0]).join('')}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:'12px', fontWeight:'500' }}>{m.name}</div>
+                    <div style={{ fontSize:'10px', color:'var(--text-dim)' }}>{m.role} · {m.region}</div>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:'12px', fontWeight:'700', color:'var(--purple-light)' }}>{m.productivity_score||0}%</div>
+                    <div style={{ fontSize:'10px', color:'var(--text-dim)' }}>productivity</div>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:'12px', fontWeight:'700', color:'var(--yellow)' }}>🏆 {m.incentive_points||0}</div>
+                    <div style={{ fontSize:'10px', color:'var(--text-dim)' }}>points</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* ── Tab: Task Assignment ─────────────────────────────────── */}
+      {/* ── ASSIGN TASK ───────────────────────────────────────────── */}
       {tab === 'assign' && (
-        <div className="grid-2-1" style={{ gap:'24px' }}>
-          <div className="card" style={{ padding:'24px' }}>
-            <h3 style={{ marginBottom:'20px' }}>New Task Assignment</h3>
-            <form onSubmit={handleTaskCreate}>
-               <div className="form-group">
-                 <label>Task Title</label>
-                 <input type="text" required placeholder="e.g., Q3 UI Refresh" value={taskForm.title} onChange={e=>setTaskForm({...taskForm, title:e.target.value})} />
-               </div>
-
-               <div className="grid-2">
-                 <div className="form-group">
-                   <label>Assignee</label>
-                   <select required value={taskForm.assigned_to} onChange={e=>setTaskForm({...taskForm, assigned_to:e.target.value})}>
-                     <option value="">Select Member</option>
-                     {members.map(m => <option key={m.id} value={m.id}>{m.name} ({m.region})</option>)}
-                   </select>
-                 </div>
-                 <div className="form-group">
-                   <label>Project</label>
-                   <select required value={taskForm.project_id} onChange={e=>setTaskForm({...taskForm, project_id:e.target.value})}>
-                     <option value="">Select Project</option>
-                     {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                   </select>
-                 </div>
-               </div>
-
-               <div className="grid-3">
-                  <div className="form-group">
-                    <label>Priority</label>
-                    <select value={taskForm.priority} onChange={e=>setTaskForm({...taskForm, priority:e.target.value})}>
-                      <option>Low</option>
-                      <option>Medium</option>
-                      <option>High</option>
-                      <option>Critical</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Due Date</label>
-                    <input type="date" required value={taskForm.due_date} onChange={e=>setTaskForm({...taskForm, due_date:e.target.value})} />
-                  </div>
-                  <div className="form-group">
-                    <label>Est. Hours</label>
-                    <input type="number" placeholder="0" value={taskForm.estimated_hours} onChange={e=>setTaskForm({...taskForm, estimated_hours:e.target.value})} />
-                  </div>
-               </div>
-
-               <div className="form-group">
-                 <label>Description</label>
-                 <textarea placeholder="Detailed task brief..." value={taskForm.description} onChange={e=>setTaskForm({...taskForm, description:e.target.value})} style={{ height:'100px' }} />
-               </div>
-
-               <button type="submit" className="btn-primary" style={{ width:'100%', marginTop:'10px' }}>Confirm Assignment</button>
-            </form>
-          </div>
-
-          <div className="card" style={{ padding:'24px' }}>
-             <h3 style={{ marginBottom:'16px' }}>Redistribution Hub</h3>
-             <div style={{ padding:'12px', background:'var(--blue-dim)', border:'1px solid var(--blue)', borderRadius:'8px', marginBottom:'20px' }}>
-                <div style={{ fontSize:'11px', color:'var(--blue)', fontWeight:'700', textTransform:'uppercase', letterSpacing:'0.05em' }}>Smart Alert</div>
-                <div style={{ fontSize:'12px', color:'var(--text-secondary)', marginTop:'4px' }}>System has detected 3 over-allocated resources in India region.</div>
-             </div>
-
-             <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
-                {suggestions.map((s,i) => (
-                  <div key={i} style={{ padding:'12px', background:'var(--bg-hover)', borderRadius:'8px', border:'1px solid var(--border)', fontSize:'12px', lineHeight:'1.4' }}>
-                     ✨ {s}
-                  </div>
-                ))}
-             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Tab: Onboarding ────────────────────────────────────────── */}
-      {tab === 'onboarding' && (
-        <div className="card" style={{ padding:'24px' }}>
-           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'24px' }}>
+        <div className="grid-2">
+          <div className="card">
+            <div className="card-title">Assign New Task</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
               <div>
-                <h3>Bulk Employee Onboarding</h3>
-                <p style={{ color:'var(--text-dim)', fontSize:'12px', marginTop:'4px' }}>Register multiple team members at once. They will be invited to set their passwords.</p>
+                <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Title *</div>
+                <input className="inp" placeholder='Task title' value={taskForm.title} onChange={e => setTaskForm({...taskForm,title:e.target.value})} />
               </div>
-              <button className="btn-secondary" onClick={()=>setBulkMembers([...bulkMembers, {...EMPTY_MEMBER}])}>+ Add Row</button>
-           </div>
-
-           <div style={{ overflowX:'auto' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse', minWidth:'800px' }}>
-                 <thead>
-                    <tr style={{ textAlign:'left', borderBottom:'1px solid var(--border)' }}>
-                       <th style={{ padding:'12px', fontSize:'11px', color:'var(--text-dim)' }}>NAME</th>
-                       <th style={{ padding:'12px', fontSize:'11px', color:'var(--text-dim)' }}>EMAIL</th>
-                       <th style={{ padding:'12px', fontSize:'11px', color:'var(--text-dim)' }}>ROLE</th>
-                       <th style={{ padding:'12px', fontSize:'11px', color:'var(--text-dim)' }}>REGION</th>
-                       <th style={{ padding:'12px', fontSize:'11px', color:'var(--text-dim)' }}>SKILLS</th>
-                       <th style={{ padding:'12px' }}></th>
-                    </tr>
-                 </thead>
-                 <tbody>
-                    {bulkMembers.map((m, i) => (
-                      <tr key={i} style={{ borderBottom:'1px solid var(--border-light)' }}>
-                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.name} onChange={e => { const list=[...bulkMembers]; list[i].name=e.target.value; setBulkMembers(list); }} placeholder="Full name" /></td>
-                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.email} onChange={e => { const list=[...bulkMembers]; list[i].email=e.target.value; setBulkMembers(list); }} placeholder="Email" /></td>
-                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.role} onChange={e => { const list=[...bulkMembers]; list[i].role=e.target.value; setBulkMembers(list); }} placeholder="e.g. Designer" /></td>
-                         <td style={{ padding:'10px' }}>
-                            <select value={m.region} onChange={e => { const list=[...bulkMembers]; list[i].region=e.target.value; setBulkMembers(list); }} style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px' }}>
-                               <option value="India">India</option>
-                               <option value="UAE">UAE</option>
-                            </select>
-                         </td>
-                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.skills} onChange={e => { const list=[...bulkMembers]; list[i].skills=e.target.value; setBulkMembers(list); }} placeholder="e.g. React, Figma" /></td>
-                         <td style={{ padding:'10px' }}>{bulkMembers.length > 1 && <button onClick={()=>{ const list=[...bulkMembers]; list.splice(i,1); setBulkMembers(list); }} style={{ background:'none', border:'none', color:'var(--red)', cursor:'pointer' }}>✕</button>}</td>
-                      </tr>
-                    ))}
-                 </tbody>
-              </table>
-           </div>
-
-           <div style={{ marginTop:'24px', display:'flex', justifyContent:'flex-end', gap:'12px', alignItems:'center' }}>
-              {bulkStatus === 'success' && <span style={{ color:'var(--green)', fontSize:'12px' }}>✅ Members created and invitations sent!</span>}
-              {bulkStatus === 'error' && <span style={{ color:'var(--red)', fontSize:'12px' }}>❌ Failed to process bulk creation.</span>}
-              <button className="btn-primary" disabled={bulkStatus === 'processing'} onClick={handleBulkSubmit}>
-                 {bulkStatus === 'processing' ? 'Processing...' : 'Provision Team Accounts'}
-              </button>
-           </div>
+              <div>
+                <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Assign To *</div>
+                <select className="inp" value={taskForm.assigned_to} onChange={e => setTaskForm({...taskForm,assigned_to:e.target.value})}>
+                  <option value=''>Select employee</option>
+                  {members.map(m => {
+                    const cap = capacity.find(c => c.id===m.id);
+                    return <option key={m.id} value={m.id}>{m.name} — {m.role} (Productivity: {m.productivity_score||0}%)</option>;
+                  })}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Project</div>
+                <select className="inp" value={taskForm.project_id} onChange={e => setTaskForm({...taskForm,project_id:e.target.value})}>
+                  <option value=''>Select project</option>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="grid-2" style={{ gap:'8px' }}>
+                <div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Priority</div>
+                  <select className="inp" value={taskForm.priority} onChange={e => setTaskForm({...taskForm,priority:e.target.value})}>
+                    {['Low','Medium','High','Critical'].map(p => <option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Est. Hours</div>
+                  <input className="inp" type='number' placeholder='0' value={taskForm.estimated_hours} onChange={e => setTaskForm({...taskForm,estimated_hours:e.target.value})} />
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Due Date</div>
+                <input className="inp" type='date' value={taskForm.due_date} onChange={e => setTaskForm({...taskForm,due_date:e.target.value})} />
+              </div>
+              <button className="btn btn-primary" onClick={submitTask}>Assign Task</button>
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-title">Current Tasks ({tasks.length})</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'6px', maxHeight:'400px', overflowY:'auto' }}>
+              {tasks.map(t => (
+                <div key={t.id} style={{ padding:'10px', background:'var(--bg-hover)', borderRadius:'8px', border:'1px solid var(--border)' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'3px' }}>
+                    <div style={{ fontSize:'12px', fontWeight:'500' }}>{t.title||'Untitled'}</div>
+                    <span style={{ fontSize:'10px', color:PRIORITY_COLORS[t.priority]||PRIORITY_COLORS.Medium, fontWeight:'600' }}>{t.priority||'Medium'}</span>
+                  </div>
+                  <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px' }}>{t.assignee_name} · {t.project_name||'No project'}</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <span style={{ fontSize:'10px', color:t.status==='Completed'?'var(--green)':t.status==='In Progress'?'var(--blue)':'var(--yellow)' }}>{t.status}</span>
+                    <span style={{ fontSize:'11px', fontWeight:'700', color:'var(--purple-light)' }}>{t.progress||0}%</span>
+                  </div>
+                  <div className="progress-bar" style={{ marginTop:'4px' }}>
+                    <div className="progress-fill" style={{ width:`${t.progress||0}%`, background:(t.progress||0)>=100?'var(--green)':(t.progress||0)>=50?'var(--purple)':'var(--yellow)' }} />
+                  </div>
+                </div>
+              ))}
+              {tasks.length===0 && <div style={{ color:'var(--text-dim)', textAlign:'center', padding:'20px' }}>No tasks found</div>}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ── Tab: AI Insights ────────────────────────────────────────── */}
-      {tab === 'ai' && (
-        <div className="grid-2-1" style={{ gap:'24px' }}>
-          <div className="card" style={{ padding:'24px' }}>
-             <h3>Smart Resource Recommendation</h3>
-             <p style={{ color:'var(--text-dim)', fontSize:'12px', marginTop:'4px', marginBottom:'24px' }}>AI analyzes skill sets, current workload, and regional proximity to suggest the best team member for a task.</p>
-
-             <div className="form-group">
-                <label>Proposed Task Title</label>
-                <input type="text" placeholder="e.g. High-Fidelity App Prototype" value={aiQuery.task_title} onChange={e=>setAiQuery({...aiQuery, task_title:e.target.value})} />
-             </div>
-             <div className="form-group">
-                <label>Required Skill/Role</label>
-                <input type="text" placeholder="e.g. UI/UX Designer" value={aiQuery.required_role} onChange={e=>setAiQuery({...aiQuery, required_role:e.target.value})} />
-             </div>
-             <div className="form-group">
-                <label>Contextual Details (Optional)</label>
-                <textarea placeholder="Specific requirements or constraints..." value={aiQuery.task_description} onChange={e=>setAiQuery({...aiQuery, task_description:e.target.value})} style={{ height:'80px' }} />
-             </div>
-
-             <button className="btn-primary" onClick={handleAiSuggest} disabled={aiLoading} style={{ width:'100%', marginTop:'10px', background:'var(--purple-glow)', color:'white' }}>
-                {aiLoading ? 'AI is processing...' : 'Get Recommendation'}
-             </button>
+      {/* ── SUGGESTIONS ───────────────────────────────────────────── */}
+      {tab === 'suggest' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+          <div className="card">
+            <div className="card-title">Allocation Recommendations</div>
+            <div style={{ fontSize:'11px', color:'var(--text-dim)', marginBottom:'12px' }}>Auto-generated based on current workload data</div>
+            {suggestions.length===0 && <div style={{ color:'var(--green)', fontSize:'13px' }}>✅ No overallocation detected — team workload is balanced!</div>}
+            {suggestions.map((s,i) => <div key={i} className="alert-banner alert-warning" style={{ marginBottom:'8px' }}>💡 {s}</div>)}
           </div>
+          <div className="card">
+            <div className="card-title">Deadline Risk Analysis</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+              {projects.filter(p => p.deadline && p.status!=='Completed').sort((a,b) => new Date(a.deadline)-new Date(b.deadline)).map(p => {
+                const days = Math.ceil((new Date(p.deadline)-new Date())/(1000*60*60*24));
+                const progress = p.progress||0;
+                const risk = days<=3?'Critical':days<=7?'High':days<=14?'Medium':'Low';
+                const rc = {Critical:'var(--red)',High:'var(--yellow)',Medium:'var(--blue)',Low:'var(--green)'};
+                const warn = days<=7 && progress<50;
+                return (
+                  <div key={p.id} style={{ padding:'10px 12px', background:'var(--bg-hover)', borderRadius:'8px', border:`1px solid ${warn?'rgba(239,68,68,0.3)':'var(--border)'}` }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'4px' }}>
+                      <div style={{ fontSize:'12px', fontWeight:'500' }}>{p.name||'Untitled'}</div>
+                      <span className="badge" style={{ background:rc[risk]+'22', color:rc[risk] }}>{risk}</span>
+                    </div>
+                    <div style={{ fontSize:'11px', color:'var(--text-dim)', marginBottom:'6px' }}>{days}d left · {progress}% done · {p.client||'Unknown'}</div>
+                    <div className="progress-bar" style={{ marginBottom:'6px' }}>
+                      <div className="progress-fill" style={{ width:`${progress}%`, background:progress>=75?'var(--green)':progress>=40?'var(--yellow)':'var(--red)' }} />
+                    </div>
+                    {warn && <div style={{ fontSize:'11px', color:'var(--red)' }}>⚠️ At current pace, this project may not complete by deadline.</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
-          <div className="card" style={{ padding:'24px', background:'var(--bg-elevated)', border:'1px solid var(--purple-dim)' }}>
-             <div style={{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'16px' }}>
-                <span style={{ fontSize:'20px' }}>✦</span>
-                <h3 style={{ fontSize:'16px' }}>AI Evaluation</h3>
-             </div>
-
-             <div style={{ minHeight:'200px', fontSize:'13px', lineHeight:'1.6', color:'var(--text-secondary)', whiteSpace:'pre-wrap' }}>
-                {aiResult || "Fill in the task details and click 'Get Recommendation' to see AI insights here."}
-             </div>
-
-             {aiResult && (
-               <div style={{ marginTop:'20px', padding:'10px', background:'var(--purple-dim)', borderRadius:'8px', fontSize:'11px', color:'var(--purple-light)', border:'1px solid var(--purple-dim)' }}>
-                 <b>Note:</b> Recommendations are based on real-time capacity and stored skill profiles.
-               </div>
-             )}
+      {/* ── AI ────────────────────────────────────────────────────── */}
+      {tab === 'ai' && (
+        <div className="grid-2">
+          <div className="card">
+            <div style={{ display:'flex', alignItems:'center', gap:'6px', marginBottom:'4px' }}>
+              <span>✨</span>
+              <div className="card-title" style={{ marginBottom:0 }}>AI Assignment Suggestion</div>
+            </div>
+            <div style={{ fontSize:'11px', color:'var(--text-dim)', marginBottom:'12px' }}>Powered by Google Gemini</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+              <div>
+                <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Task Title *</div>
+                <input className="inp" placeholder='What needs to be assigned?' value={aiQuery.task_title} onChange={e => setAiQuery({...aiQuery,task_title:e.target.value})} />
+              </div>
+              <div>
+                <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Description</div>
+                <textarea className="inp" style={{ height:'70px', resize:'none' }} placeholder='Describe the task...' value={aiQuery.task_description} onChange={e => setAiQuery({...aiQuery,task_description:e.target.value})} />
+              </div>
+              <div>
+                <div style={{ fontSize:'10px', color:'var(--text-dim)', marginBottom:'4px', textTransform:'uppercase' }}>Required Role</div>
+                <input className="inp" placeholder='e.g. Frontend Developer' value={aiQuery.required_role} onChange={e => setAiQuery({...aiQuery,required_role:e.target.value})} />
+              </div>
+              <button className="btn btn-primary" onClick={askAI} disabled={aiLoading} style={{ background:'linear-gradient(135deg,var(--purple),#4f46e5)', opacity:aiLoading?0.7:1 }}>
+                {aiLoading ? 'Thinking...' : '✨ Get Suggestion'}
+              </button>
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-title">AI Response</div>
+            {aiLoading && <div style={{ display:'flex', gap:'8px', alignItems:'center', color:'var(--text-dim)', fontSize:'12px' }}><div className="spinner" />Analyzing team data...</div>}
+            {aiResult && !aiLoading && <div style={{ fontSize:'12px', lineHeight:'1.7', color:'var(--text-secondary)', background:'var(--bg-hover)', padding:'12px', borderRadius:'8px', border:'1px solid var(--border-light)', whiteSpace:'pre-wrap' }}>{aiResult}</div>}
+            {!aiResult && !aiLoading && <div style={{ color:'var(--text-dim)', fontSize:'12px', textAlign:'center', padding:'30px' }}>Fill in the task details and click "Get Suggestion"</div>}
           </div>
         </div>
       )}
