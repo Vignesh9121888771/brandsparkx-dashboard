@@ -2,23 +2,23 @@ const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
 const db       = require('../db');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'brandsparkx_secret_fallback_2026';
+
 const register = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ success: false, message: 'name, email, password required' });
 
-    // Check if email exists in users already
     const exists = await db.query('SELECT id FROM users WHERE email=$1', [email]);
     if (exists.rows.length > 0)
       return res.status(400).json({ success: false, message: 'Email already registered' });
 
-    // Check if email is pre-approved (exists in members table)
     const member = await db.query('SELECT * FROM members WHERE email=$1', [email]);
     if (member.rows.length === 0)
       return res.status(403).json({ 
         success: false, 
-        message: 'Access denied. Your email is not registered in the system. Contact your manager.' 
+        message: 'Access denied. Your email is not pre-registered. Contact your manager.'
       });
 
     const memberData   = member.rows[0];
@@ -26,23 +26,30 @@ const register = async (req, res, next) => {
 
     const result = await db.query(
       `INSERT INTO users (name, email, password_hash, role, member_id, region)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, name, email, role, member_id, region`,
-      [name, email, password_hash, 'employee', memberData.id, memberData.region]
+       VALUES ($1,$2,$3,'employee',$4,$5) RETURNING id, name, email, role, member_id, region`,
+      [name, email, password_hash, memberData.id, memberData.region]
     );
 
     const user  = result.rows[0];
     const token = jwt.sign(
       { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id, region: user.region },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
-    await db.query(
-      'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
-      [user.id, 'REGISTER', 'users', `Employee registered: ${user.email}`]
-    );
+
+    // Audit log
+    try {
+      await db.query(
+        'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
+        [user.id, 'REGISTER', 'users', `Employee registered: ${user.email}`]
+      );
+    } catch (e) { console.error('Audit log failed:', e.message); }
 
     res.status(201).json({ success: true, token, user });
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error('Registration error:', err);
+    next(err);
+  }
 };
 
 const login = async (req, res, next) => {
@@ -62,26 +69,30 @@ const login = async (req, res, next) => {
     if (!valid)
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
 
-    // Update last login
     await db.query('UPDATE users SET last_login=NOW() WHERE id=$1', [user.id]);
 
     const token = jwt.sign(
       { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id, region: user.region },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
     // Audit log
-    await db.query(
-      'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
-      [user.id, 'LOGIN', 'users', `User logged in: ${user.email}`]
-    );
+    try {
+      await db.query(
+        'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
+        [user.id, 'LOGIN', 'users', `User logged in: ${user.email}`]
+      );
+    } catch (e) { console.error('Audit log failed:', e.message); }
 
     res.json({
       success: true, token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role, member_id: user.member_id, region: user.region }
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error('Login error:', err);
+    next(err);
+  }
 };
 
 const getMe = async (req, res, next) => {
@@ -124,9 +135,11 @@ const registerManager = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Invalid manager access code' });
     if (!name || !email || !password)
       return res.status(400).json({ success: false, message: 'All fields required' });
+
     const exists = await db.query('SELECT id FROM users WHERE email=$1', [email]);
     if (exists.rows.length > 0)
       return res.status(400).json({ success: false, message: 'Email already registered' });
+
     const password_hash = await bcrypt.hash(password, 12);
     const result = await db.query(
       `INSERT INTO users (name, email, password_hash, role, region)
@@ -136,10 +149,22 @@ const registerManager = async (req, res, next) => {
     const user  = result.rows[0];
     const token = jwt.sign(
       { id: user.id, name: user.name, email: user.email, role: user.role, region: user.region },
-      process.env.JWT_SECRET, { expiresIn: '7d' }
+      JWT_SECRET, { expiresIn: '7d' }
     );
+
+    // Audit log
+    try {
+      await db.query(
+        'INSERT INTO audit_logs (user_id, action, entity, details) VALUES ($1,$2,$3,$4)',
+        [user.id, 'REGISTER_MGR', 'users', `Manager registered: ${user.email}`]
+      );
+    } catch (e) { console.error('Audit log failed:', e.message); }
+
     res.status(201).json({ success: true, token, user });
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error('Manager Registration error:', err);
+    next(err);
+  }
 };
 
 module.exports = { register, registerManager, login, getMe, getUsers, toggleUser };

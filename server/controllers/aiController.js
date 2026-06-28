@@ -4,7 +4,6 @@ const getAISuggestion = async (req, res, next) => {
   try {
     const { task_title, task_description, required_role } = req.body;
 
-    // Get all members with their current capacity
     const members = await db.query(`
       SELECT m.id, m.name, m.role, m.region,
         COALESCE(SUM(a.allocation_percent), 0) AS allocated_percent,
@@ -24,7 +23,6 @@ const getAISuggestion = async (req, res, next) => {
       available: m.available_percent + '%'
     }));
 
-    // Call Gemini API
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
@@ -33,7 +31,7 @@ const getAISuggestion = async (req, res, next) => {
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: `You are a resource allocation assistant for BrandSparkX, a digital marketing agency with operations in India and UAE.
+              text: `You are a resource allocation assistant for BrandSparkX.
 
 Task to assign: "${task_title}"
 Description: "${task_description || 'No description provided'}"
@@ -42,11 +40,10 @@ Required role: "${required_role || 'Any'}"
 Available team members and their current workload:
 ${JSON.stringify(membersData, null, 2)}
 
-Based on the task requirements, role match, and available capacity, suggest the best person to assign this task to.
-Keep your response concise — 3 short paragraphs max:
-1. Who you recommend and why
-2. Any overallocation risk to watch out for
-3. One alternative if the first choice is unavailable`
+Provide a concise response (3 short paragraphs):
+1. Best person for the task, matching role and highest available capacity. Include an 'AI Estimated Time' (in hours) for how long this task should take based on the description.
+2. Any utilization risks or upcoming deadlines to consider.
+3. One backup option if the first choice is unavailable.`
             }]
           }]
         })

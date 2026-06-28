@@ -5,8 +5,17 @@ const Card = ({ children, style={} }) => (
   <div className="card" style={{ padding:'20px', ...style }}>{children}</div>
 );
 
-const STATUS_OPTIONS = ['Active', 'On Hold', 'Completed', 'Cancelled'];
+const STATUS_OPTIONS = ['Active', 'On Hold', 'Completed', 'Cancelled', 'Planning', 'In Review'];
 const PRIORITY_OPTIONS = ['Low', 'Medium', 'High', 'Critical'];
+
+const statusColors = {
+  Active:      { color: 'var(--green)',        bg: 'var(--green-dim)'  },
+  'In Review': { color: 'var(--yellow)',       bg: 'var(--yellow-dim)' },
+  Planning:    { color: 'var(--purple-light)', bg: 'var(--purple-dim)' },
+  Completed:   { color: 'var(--text-dim)',     bg: 'var(--bg-hover)'   },
+  'On Hold':   { color: 'var(--orange)',       bg: 'var(--orange-dim)' },
+  Cancelled:   { color: 'var(--red)',          bg: 'var(--red-dim)'    },
+};
 
 export default function Projects({ user, search }) {
   const [projects, setProjects] = useState([]);
@@ -16,16 +25,17 @@ export default function Projects({ user, search }) {
   const [showForm, setShowForm] = useState(false);
 
   const [form, setForm] = useState({
-    name: '', client: '', status: 'Active', priority: 'Medium', deadline: '', manager_id: user?.member_id || '', region: 'India', description: ''
+    name: '', client: '', status: 'Planning', priority: 'Medium', deadline: '', manager_id: user?.member_id || '', region: 'India', description: ''
   });
 
   const load = useCallback(async () => {
     try {
+      setLoading(true);
       const [pRes, mRes] = await Promise.all([getProjects(), getMembers()]);
       setProjects(pRes.data.data || []);
       setMembers(mRes.data.data   || []);
     } catch {
-      console.error("Failed to load projects");
+      console.error('Failed to load projects');
     } finally {
       setLoading(false);
     }
@@ -43,7 +53,7 @@ export default function Projects({ user, search }) {
       }
       setShowForm(false);
       setEditing(null);
-      setForm({ name: '', client: '', status: 'Active', priority: 'Medium', deadline: '', manager_id: user?.member_id || '', region: 'India', description: '' });
+      setForm({ name: '', client: '', status: 'Planning', priority: 'Medium', deadline: '', manager_id: user?.member_id || '', region: 'India', description: '' });
       load();
     } catch {
       alert('Failed to save project');
@@ -60,6 +70,16 @@ export default function Projects({ user, search }) {
     setShowForm(true);
   };
 
+  const handleDeliver = async (p) => {
+    if (!window.confirm(`Mark "${p.name}" as Completed/Delivered?`)) return;
+    try {
+      await updateProject(p.id, { ...p, status: 'Completed', progress: 100 });
+      load();
+    } catch {
+      alert('Failed to update project status');
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this project?')) return;
     try {
@@ -67,6 +87,8 @@ export default function Projects({ user, search }) {
       load();
     } catch { alert('Failed to delete'); }
   };
+
+  const isManager = user?.role === 'manager';
 
   const filtered = projects.filter(p =>
     p.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -82,7 +104,7 @@ export default function Projects({ user, search }) {
           <h1>Project Portfolio</h1>
           <p>Management and tracking of all client engagements.</p>
         </div>
-        <button className="btn-primary" onClick={() => { setShowForm(true); setEditing(null); }}>+ New Project</button>
+        <button className="btn-primary" onClick={() => { setShowForm(true); setEditing(null); setForm({ name: '', client: '', status: 'Planning', priority: 'Medium', deadline: '', manager_id: user?.member_id || '', region: 'India', description: '' }); }}>+ New Project</button>
       </div>
 
       {showForm && (
@@ -133,7 +155,7 @@ export default function Projects({ user, search }) {
               <label>Project Manager</label>
               <select value={form.manager_id} onChange={e => setForm({...form, manager_id:e.target.value})}>
                 <option value="">Select Manager</option>
-                {members.filter(m => m.role === 'Manager' || m.role === 'Admin').map(m => (
+                {members.filter(m => m.role === 'Manager' || m.role === 'Admin' || m.role === 'Lead').map(m => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
@@ -157,12 +179,15 @@ export default function Projects({ user, search }) {
           <Card key={p.id}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
               <span className="badge" style={{
-                background: p.status==='Active' ? 'var(--green-dim)' : 'var(--bg-hover)',
-                color: p.status==='Active' ? 'var(--green)' : 'var(--text-dim)'
+                background: statusColors[p.status]?.bg || 'var(--bg-hover)',
+                color: statusColors[p.status]?.color || 'var(--text-dim)'
               }}>{p.status}</span>
-              <div style={{ display:'flex', gap:'4px' }}>
-                <button onClick={() => handleEdit(p)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>✏️</button>
-                <button onClick={() => handleDelete(p.id)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>🗑️</button>
+              <div style={{ display:'flex', gap:'8px' }}>
+                {isManager && p.status !== 'Completed' && (
+                  <button onClick={() => handleDeliver(p)} title="Deliver Project" style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>📦</button>
+                )}
+                <button onClick={() => handleEdit(p)} title="Edit" style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>✏️</button>
+                <button onClick={() => handleDelete(p.id)} title="Delete" style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>🗑️</button>
               </div>
             </div>
 

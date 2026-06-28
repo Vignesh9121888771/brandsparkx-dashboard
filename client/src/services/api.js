@@ -1,7 +1,18 @@
 import axios from 'axios';
 
+// On Vercel/Production, the API is relative or at the specific Render domain.
+// We use a robust detection logic here.
+const getBaseURL = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:5000/api';
+  }
+  // Default to the production backend on Render
+  return 'https://brandsparkx-dashboard.onrender.com/api';
+};
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api',
+  baseURL: getBaseURL(),
 });
 
 // Auto-attach token to every request
@@ -19,7 +30,9 @@ API.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('bsx_token');
       localStorage.removeItem('bsx_user');
-      window.location.href = '/';
+      if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
+        window.location.href = '/';
+      }
     }
     console.error("API Error:", err.response?.data?.message || err.message);
     return Promise.reject(err);
@@ -36,6 +49,7 @@ export const getProgressHistory   = (id)        => API.get(`/tasks/${id}/progres
 // Auth
 export const login          = (data) => API.post('/auth/login', data);
 export const register       = (data) => API.post('/auth/register', data);
+export const registerManager = (data) => API.post('/auth/register-manager', data);
 export const getMe          = ()     => API.get('/auth/me');
 export const getUsers       = ()     => API.get('/auth/users');
 export const toggleUser     = (id)   => API.put(`/auth/users/${id}/toggle`);
@@ -68,3 +82,24 @@ export const deleteMember     = (id) => API.delete(`/members/${id}`);
 export const deleteProject    = (id) => API.delete(`/projects/${id}`);
 
 export const getAISuggestion  = (data) => API.post('/ai/suggest', data);
+
+export const downloadCSV = (data, filename) => {
+  if (!data || !data.length) return;
+  const headers = Object.keys(data[0]).join(',');
+  const rows = data.map(row =>
+    Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')
+  );
+  const csvContent = [headers, ...rows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${filename}_${new Date().toISOString().slice(0,10)}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+export const getTaskComments    = (taskId) => API.get(`/comments/${taskId}`);
+export const createTaskComment  = (taskId, data) => API.post(`/comments/${taskId}`, data);

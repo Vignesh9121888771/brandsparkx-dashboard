@@ -5,8 +5,6 @@ import {
   reviewProgressUpdate, createBulkMembers
 } from '../services/api';
 
-
-
 const EMPTY_MEMBER    = { name:'', email:'', role:'', region:'India', skills:'' };
 
 // ── Star Rating Component ───────────────────────────────────────
@@ -53,7 +51,7 @@ export default function ManagerPanel() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [reqRes,  memRes, projRes, capRes, updRes] = await Promise.all([
+      const [reqRes, memRes, projRes, capRes, updRes] = await Promise.all([
         getRequests(), getMembers(), getProjects(), getCapacity(), getPendingProgressUpdates()
       ]);
       setRequests(reqRes.data.data       || []);
@@ -62,6 +60,7 @@ export default function ManagerPanel() {
       setPendingUpdates(updRes.data.data || []);
       const capData = capRes.data.data   || [];
       setCapacity(capData);
+
       const over = capData.filter(m => (parseInt(m.allocated_percent)||0) > 85);
       const free = capData.filter(m => (parseInt(m.allocated_percent)||0) < 40);
       setSuggestions(over.map(o => {
@@ -99,7 +98,6 @@ export default function ManagerPanel() {
         manager_note:  reviewNote[update_id] || '',
         quality_score: action === 'approve' ? qualityScore[update_id] : null,
       });
-      // Show result feedback
       if (res.data.data) {
         setApprovalResult(p => ({ ...p, [update_id]: res.data.data }));
       }
@@ -131,14 +129,22 @@ export default function ManagerPanel() {
     setAiLoading(false);
   };
 
-  const handleBulkSubmit = async () => {
+  const addRow    = () => setBulkMembers(b => [...b, { ...EMPTY_MEMBER }]);
+  const removeRow = (i) => setBulkMembers(b => b.filter((_,idx) => idx !== i));
+  const updateRow = (i, field, val) => setBulkMembers(b => b.map((m,idx) => idx===i ? { ...m, [field]:val } : m));
+
+  const submitBulk = async () => {
+    const valid = bulkMembers.filter(m => m.name && m.email && m.role);
+    if (!valid.length) return setBulkStatus('error:Fill at least one complete row');
+    setBulkStatus('loading');
     try {
-      setBulkStatus('processing');
-      await createBulkMembers(bulkMembers);
-      setBulkStatus('success');
+      const res = await createBulkMembers({ members: valid });
+      setBulkStatus(`success:Added ${res.data.count || res.data.data?.length || valid.length} member(s) successfully`);
       setBulkMembers([{ ...EMPTY_MEMBER }]);
       loadAll();
-    } catch { setBulkStatus('error'); }
+    } catch (err) {
+      setBulkStatus(`error:${err.response?.data?.message || 'Failed to process bulk onboarding'}`);
+    }
   };
 
   if (loading) return <div className="loading-state">Accessing management console...</div>;
@@ -181,7 +187,7 @@ export default function ManagerPanel() {
             <div key={u.id} className="card" style={{ padding:'0', overflow:'hidden', marginBottom:'16px' }}>
               <div style={{ padding:'20px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', background:'rgba(255,255,255,0.01)' }}>
                  <div style={{ display:'flex', gap:'16px', alignItems:'center' }}>
-                    <div className="avatar">{u.member_name[0]}</div>
+                    <div className="avatar">{u.member_name?.[0]}</div>
                     <div>
                        <div style={{ fontSize:'14px', fontWeight:'700' }}>{u.member_name} <span style={{ fontWeight:'400', color:'var(--text-dim)', margin:'0 4px' }}>→</span> {u.task_title}</div>
                        <div style={{ fontSize:'11px', color:'var(--text-dim)', marginTop:'2px' }}>{u.member_role} · {u.project_name || 'General'}</div>
@@ -317,7 +323,7 @@ export default function ManagerPanel() {
              <h3 style={{ marginBottom:'16px' }}>Redistribution Hub</h3>
              <div style={{ padding:'12px', background:'var(--blue-dim)', border:'1px solid var(--blue)', borderRadius:'8px', marginBottom:'20px' }}>
                 <div style={{ fontSize:'11px', color:'var(--blue)', fontWeight:'700', textTransform:'uppercase', letterSpacing:'0.05em' }}>Smart Alert</div>
-                <div style={{ fontSize:'12px', color:'var(--text-secondary)', marginTop:'4px' }}>System has detected 3 over-allocated resources in India region.</div>
+                <div style={{ fontSize:'12px', color:'var(--text-secondary)', marginTop:'4px' }}>System detects workload imbalances. Consider re-assigning tasks.</div>
              </div>
 
              <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
@@ -337,9 +343,9 @@ export default function ManagerPanel() {
            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'24px' }}>
               <div>
                 <h3>Bulk Employee Onboarding</h3>
-                <p style={{ color:'var(--text-dim)', fontSize:'12px', marginTop:'4px' }}>Register multiple team members at once. They will be invited to set their passwords.</p>
+                <p style={{ color:'var(--text-dim)', fontSize:'12px', marginTop:'4px' }}>Register multiple team members at once.</p>
               </div>
-              <button className="btn-secondary" onClick={()=>setBulkMembers([...bulkMembers, {...EMPTY_MEMBER}])}>+ Add Row</button>
+              <button className="btn-secondary" onClick={addRow}>+ Add Row</button>
            </div>
 
            <div style={{ overflowX:'auto' }}>
@@ -357,17 +363,17 @@ export default function ManagerPanel() {
                  <tbody>
                     {bulkMembers.map((m, i) => (
                       <tr key={i} style={{ borderBottom:'1px solid var(--border-light)' }}>
-                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.name} onChange={e => { const list=[...bulkMembers]; list[i].name=e.target.value; setBulkMembers(list); }} placeholder="Full name" /></td>
-                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.email} onChange={e => { const list=[...bulkMembers]; list[i].email=e.target.value; setBulkMembers(list); }} placeholder="Email" /></td>
-                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.role} onChange={e => { const list=[...bulkMembers]; list[i].role=e.target.value; setBulkMembers(list); }} placeholder="e.g. Designer" /></td>
+                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.name} onChange={e => updateRow(i, 'name', e.target.value)} placeholder="Full name" /></td>
+                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.email} onChange={e => updateRow(i, 'email', e.target.value)} placeholder="Email" /></td>
+                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.role} onChange={e => updateRow(i, 'role', e.target.value)} placeholder="e.g. Designer" /></td>
                          <td style={{ padding:'10px' }}>
-                            <select value={m.region} onChange={e => { const list=[...bulkMembers]; list[i].region=e.target.value; setBulkMembers(list); }} style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px' }}>
+                            <select value={m.region} onChange={e => updateRow(i, 'region', e.target.value)} style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px' }}>
                                <option value="India">India</option>
                                <option value="UAE">UAE</option>
                             </select>
                          </td>
-                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.skills} onChange={e => { const list=[...bulkMembers]; list[i].skills=e.target.value; setBulkMembers(list); }} placeholder="e.g. React, Figma" /></td>
-                         <td style={{ padding:'10px' }}>{bulkMembers.length > 1 && <button onClick={()=>{ const list=[...bulkMembers]; list.splice(i,1); setBulkMembers(list); }} style={{ background:'none', border:'none', color:'var(--red)', cursor:'pointer' }}>✕</button>}</td>
+                         <td style={{ padding:'10px' }}><input style={{ background:'transparent', border:'none', color:'var(--text-primary)', fontSize:'13px', width:'100%' }} value={m.skills} onChange={e => updateRow(i, 'skills', e.target.value)} placeholder="e.g. React, Figma" /></td>
+                         <td style={{ padding:'10px' }}>{bulkMembers.length > 1 && <button onClick={()=>removeRow(i)} style={{ background:'none', border:'none', color:'var(--red)', cursor:'pointer' }}>✕</button>}</td>
                       </tr>
                     ))}
                  </tbody>
@@ -375,10 +381,10 @@ export default function ManagerPanel() {
            </div>
 
            <div style={{ marginTop:'24px', display:'flex', justifyContent:'flex-end', gap:'12px', alignItems:'center' }}>
-              {bulkStatus === 'success' && <span style={{ color:'var(--green)', fontSize:'12px' }}>✅ Members created and invitations sent!</span>}
-              {bulkStatus === 'error' && <span style={{ color:'var(--red)', fontSize:'12px' }}>❌ Failed to process bulk creation.</span>}
-              <button className="btn-primary" disabled={bulkStatus === 'processing'} onClick={handleBulkSubmit}>
-                 {bulkStatus === 'processing' ? 'Processing...' : 'Provision Team Accounts'}
+              {bulkStatus.startsWith('success') && <span style={{ color:'var(--green)', fontSize:'12px' }}>✓ {bulkStatus.split(':')[1]}</span>}
+              {bulkStatus.startsWith('error') && <span style={{ color:'var(--red)', fontSize:'12px' }}>✕ {bulkStatus.split(':')[1]}</span>}
+              <button className="btn-primary" disabled={bulkStatus === 'loading'} onClick={submitBulk}>
+                 {bulkStatus === 'loading' ? 'Processing...' : `Save ${bulkMembers.length} Member${bulkMembers.length>1?'s':''}`}
               </button>
            </div>
         </div>
@@ -389,19 +395,19 @@ export default function ManagerPanel() {
         <div className="grid-2-1" style={{ gap:'24px' }}>
           <div className="card" style={{ padding:'24px' }}>
              <h3>Smart Resource Recommendation</h3>
-             <p style={{ color:'var(--text-dim)', fontSize:'12px', marginTop:'4px', marginBottom:'24px' }}>AI analyzes skill sets, current workload, and regional proximity to suggest the best team member for a task.</p>
+             <p style={{ color:'var(--text-dim)', fontSize:'12px', marginTop:'4px', marginBottom:'24px' }}>AI analyzes skill sets, current workload, and regional proximity.</p>
 
              <div className="form-group">
                 <label>Proposed Task Title</label>
-                <input type="text" placeholder="e.g. High-Fidelity App Prototype" value={aiQuery.task_title} onChange={e=>setAiQuery({...aiQuery, task_title:e.target.value})} />
+                <input type="text" placeholder="e.g. App Prototype" value={aiQuery.task_title} onChange={e=>setAiQuery({...aiQuery, task_title:e.target.value})} />
              </div>
              <div className="form-group">
                 <label>Required Skill/Role</label>
-                <input type="text" placeholder="e.g. UI/UX Designer" value={aiQuery.required_role} onChange={e=>setAiQuery({...aiQuery, required_role:e.target.value})} />
+                <input type="text" placeholder="e.g. UI Designer" value={aiQuery.required_role} onChange={e=>setAiQuery({...aiQuery, required_role:e.target.value})} />
              </div>
              <div className="form-group">
                 <label>Contextual Details (Optional)</label>
-                <textarea placeholder="Specific requirements or constraints..." value={aiQuery.task_description} onChange={e=>setAiQuery({...aiQuery, task_description:e.target.value})} style={{ height:'80px' }} />
+                <textarea placeholder="Specific requirements..." value={aiQuery.task_description} onChange={e=>setAiQuery({...aiQuery, task_description:e.target.value})} style={{ height:'80px' }} />
              </div>
 
              <button className="btn-primary" onClick={handleAiSuggest} disabled={aiLoading} style={{ width:'100%', marginTop:'10px', background:'var(--purple-glow)', color:'white' }}>
@@ -418,12 +424,6 @@ export default function ManagerPanel() {
              <div style={{ minHeight:'200px', fontSize:'13px', lineHeight:'1.6', color:'var(--text-secondary)', whiteSpace:'pre-wrap' }}>
                 {aiResult || "Fill in the task details and click 'Get Recommendation' to see AI insights here."}
              </div>
-
-             {aiResult && (
-               <div style={{ marginTop:'20px', padding:'10px', background:'var(--purple-dim)', borderRadius:'8px', fontSize:'11px', color:'var(--purple-light)', border:'1px solid var(--purple-dim)' }}>
-                 <b>Note:</b> Recommendations are based on real-time capacity and stored skill profiles.
-               </div>
-             )}
           </div>
         </div>
       )}

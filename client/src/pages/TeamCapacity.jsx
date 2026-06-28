@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCapacity, getTasks, getProductivitySummary } from '../services/api';
+import { getCapacity, getTasks, getProductivitySummary, downloadCSV } from '../services/api';
 
 const getProductivityStatus = (score) => {
   const s = parseFloat(score) || 0;
@@ -20,7 +20,6 @@ export default function TeamCapacity({ search, defaultRegion }) {
     const load = async () => {
       try {
         setLoading(true);
-        // Get productivity summary + capacity + tasks
         const [prodRes, capRes, taskRes] = await Promise.all([
           getProductivitySummary(),
           getCapacity(),
@@ -35,7 +34,16 @@ export default function TeamCapacity({ search, defaultRegion }) {
         // Merge productivity data with capacity data
         const merged = capData.map(m => {
           const prod = prodData.find(p => p.id === m.id) || {};
-          return { ...m, ...prod };
+          return {
+            ...m,
+            productivity_score: prod.productivity_score || m.productivity_score || 0,
+            incentive_points:   prod.incentive_points   || m.incentive_points   || 0,
+            total_tasks:        prod.total_tasks        || 0,
+            completed_tasks:    prod.completed_tasks    || 0,
+            on_time_tasks:      prod.on_time_tasks      || 0,
+            avg_quality:        prod.avg_quality        || null,
+            overtime_submissions: prod.overtime_submissions || 0,
+          };
         });
 
         setMembers(merged);
@@ -54,9 +62,10 @@ export default function TeamCapacity({ search, defaultRegion }) {
     const matchesRegion = defaultRegion === 'All' || !defaultRegion || m.region === defaultRegion;
 
     if (filter === 'All') return matchesSearch && matchesRegion;
+    const status = getProductivityStatus(m.productivity_score);
     if (filter === 'High Load') return matchesSearch && matchesRegion && (parseInt(m.allocated_percent) || 0) > 80;
     if (filter === 'Available') return matchesSearch && matchesRegion && (parseInt(m.available_percent) || 0) > 20;
-    if (filter === 'High Performers') return matchesSearch && matchesRegion && (parseFloat(m.productivity_score) || 0) >= 80;
+    if (filter === 'High Performers') return matchesSearch && matchesRegion && status.label === 'High';
     return matchesSearch && matchesRegion;
   });
 
@@ -75,8 +84,11 @@ export default function TeamCapacity({ search, defaultRegion }) {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Team Capacity & Productivity</h1>
-        <p>Real-time resource allocation and performance tracking.</p>
+        <div>
+          <h1>Team Capacity & Productivity</h1>
+          <button className="btn btn-ghost" style={{ marginTop:"8px" }} onClick={() => downloadCSV(members, "productivity_report")}>📥 Download Performance CSV</button>
+          <p>Real-time resource allocation and performance tracking.</p>
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -134,8 +146,8 @@ export default function TeamCapacity({ search, defaultRegion }) {
           const status   = getProductivityStatus(score);
           const initials = m.name?.split(' ').map(n=>n[0]).join('') || '?';
           const memberTasks = tasks.filter(t => t.assigned_to === m.id);
-          const completedTasks = memberTasks.filter(t => t.status === 'Completed').length;
-          const inProgressTasks = memberTasks.filter(t => t.status === 'In Progress').length;
+          const completedTasksCount = memberTasks.filter(t => t.status === 'Completed').length;
+          const inProgressTasksCount = memberTasks.filter(t => t.status === 'In Progress').length;
 
           return (
             <div key={m.id} className="card" style={{ padding:'20px' }}>
@@ -176,11 +188,11 @@ export default function TeamCapacity({ search, defaultRegion }) {
                 {/* Tasks */}
                 <div style={{ textAlign:'center' }}>
                   <div style={{ fontSize:'16px', fontWeight:'700', color:'var(--text-primary)' }}>
-                    {completedTasks}<span style={{ fontSize:'12px', color:'var(--text-dim)' }}>/{memberTasks.length}</span>
+                    {completedTasksCount}<span style={{ fontSize:'12px', color:'var(--text-dim)' }}>/{memberTasks.length}</span>
                   </div>
                   <div style={{ fontSize:'10px', color:'var(--text-dim)', marginTop:'2px' }}>Tasks Done</div>
-                  {inProgressTasks > 0 && (
-                    <div style={{ fontSize:'10px', color:'var(--blue)', marginTop:'1px' }}>{inProgressTasks} in progress</div>
+                  {inProgressTasksCount > 0 && (
+                    <div style={{ fontSize:'10px', color:'var(--blue)', marginTop:'1px' }}>{inProgressTasksCount} in progress</div>
                   )}
                 </div>
 
@@ -215,14 +227,14 @@ export default function TeamCapacity({ search, defaultRegion }) {
               {memberTasks.length > 0 && (
                 <div style={{ marginTop:'14px', paddingTop:'14px', borderTop:'1px solid var(--border)' }}>
                   <div style={{ display:'flex', gap:'4px', height:'6px', borderRadius:'3px', overflow:'hidden' }}>
-                    <div style={{ flex:completedTasks, background:'var(--green)', minWidth:completedTasks>0?'4px':0 }} />
-                    <div style={{ flex:inProgressTasks, background:'var(--blue)', minWidth:inProgressTasks>0?'4px':0 }} />
-                    <div style={{ flex:memberTasks.length-completedTasks-inProgressTasks, background:'var(--border)' }} />
+                    <div style={{ flex:completedTasksCount, background:'var(--green)', minWidth:completedTasksCount>0?'4px':0 }} />
+                    <div style={{ flex:inProgressTasksCount, background:'var(--blue)', minWidth:inProgressTasksCount>0?'4px':0 }} />
+                    <div style={{ flex:memberTasks.length-completedTasksCount-inProgressTasksCount, background:'var(--border)' }} />
                   </div>
                   <div style={{ display:'flex', gap:'12px', marginTop:'5px' }}>
-                    <span style={{ fontSize:'10px', color:'var(--green)' }}>■ {completedTasks} completed</span>
-                    <span style={{ fontSize:'10px', color:'var(--blue)' }}>■ {inProgressTasks} in progress</span>
-                    <span style={{ fontSize:'10px', color:'var(--text-dim)' }}>■ {memberTasks.length-completedTasks-inProgressTasks} pending</span>
+                    <span style={{ fontSize:'10px', color:'var(--green)' }}>■ {completedTasksCount} completed</span>
+                    <span style={{ fontSize:'10px', color:'var(--blue)' }}>■ {inProgressTasksCount} in progress</span>
+                    <span style={{ fontSize:'10px', color:'var(--text-dim)' }}>■ {memberTasks.length-completedTasksCount-inProgressTasksCount} pending</span>
                   </div>
                 </div>
               )}

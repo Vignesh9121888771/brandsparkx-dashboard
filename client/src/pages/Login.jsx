@@ -1,8 +1,5 @@
 import { useState } from 'react';
-import { login, register } from '../services/api';
-import axios from 'axios';
-
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { login, register, registerManager } from '../services/api';
 
 const inp = {
   width: '100%', padding: '11px 13px',
@@ -26,13 +23,14 @@ export default function Login({ onLogin }) {
     if (!form.email || !form.password) return setError('Email and password are required');
     if (mode === 'register' && !form.name) return setError('Name is required');
     if (mode === 'register' && isManager && !form.manager_code) return setError('Manager access code required');
+
     setLoading(true);
     try {
       let res;
       if (mode === 'login') {
         res = await login({ email: form.email, password: form.password });
       } else if (isManager) {
-        res = await axios.post(`${BASE}/auth/register-manager`, {
+        res = await registerManager({
           name: form.name, email: form.email,
           password: form.password, manager_code: form.manager_code,
           region: form.region
@@ -40,17 +38,24 @@ export default function Login({ onLogin }) {
       } else {
         res = await register({ name: form.name, email: form.email, password: form.password });
       }
-      localStorage.setItem('bsx_token', res.data.token);
-      localStorage.setItem('bsx_user',  JSON.stringify(res.data.user));
-      onLogin(res.data.user);
+
+      if (res.data.token) {
+        localStorage.setItem('bsx_token', res.data.token);
+        localStorage.setItem('bsx_user',  JSON.stringify(res.data.user));
+        onLogin(res.data.user);
+      } else {
+        setError('Server returned an empty response');
+      }
     } catch (err) {
-      setError(err.response?.data?.message || 'Something went wrong. Make sure server is running.');
+      console.error('Auth error:', err);
+      setError(err.response?.data?.message || 'Authentication failed. Check your credentials and server status.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
-    <div className="page">
+    <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0a0f' }}>
       <div style={{ width: '100%', maxWidth: '400px' }}>
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <div style={{
@@ -99,27 +104,21 @@ export default function Login({ onLogin }) {
               <div>
                 <label style={{ fontSize: '10px', color: '#606075', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Full Name *</label>
                 <input style={inp} placeholder='Your full name' value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  onFocus={e => e.target.style.borderColor = '#7c3aed'}
-                  onBlur={e => e.target.style.borderColor = '#2a2a3a'} />
+                  onChange={e => setForm({ ...form, name: e.target.value })} />
               </div>
             )}
 
             <div>
               <label style={{ fontSize: '10px', color: '#606075', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email *</label>
               <input style={inp} type='email' placeholder='you@brandsparkx.com' value={form.email}
-                onChange={e => setForm({ ...form, email: e.target.value })}
-                onFocus={e => e.target.style.borderColor = '#7c3aed'}
-                onBlur={e => e.target.style.borderColor = '#2a2a3a'} />
+                onChange={e => setForm({ ...form, email: e.target.value })} />
             </div>
 
             <div>
               <label style={{ fontSize: '10px', color: '#606075', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Password *</label>
               <input style={inp} type='password' placeholder='Min. 8 characters' value={form.password}
                 onChange={e => setForm({ ...form, password: e.target.value })}
-                onKeyDown={e => e.key === 'Enter' && submit()}
-                onFocus={e => e.target.style.borderColor = '#7c3aed'}
-                onBlur={e => e.target.style.borderColor = '#2a2a3a'} />
+                onKeyDown={e => e.key === 'Enter' && submit()} />
             </div>
 
             {mode === 'register' && isManager && (
@@ -135,18 +134,9 @@ export default function Login({ onLogin }) {
                 <div>
                   <label style={{ fontSize: '10px', color: '#606075', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Manager Access Code *</label>
                   <input style={inp} type='password' placeholder='Enter access code' value={form.manager_code}
-                    onChange={e => setForm({ ...form, manager_code: e.target.value })}
-                    onFocus={e => e.target.style.borderColor = '#7c3aed'}
-                    onBlur={e => e.target.style.borderColor = '#2a2a3a'} />
-                  <div style={{ fontSize: '10px', color: '#606075', marginTop: '4px' }}>Contact system administrator for the access code.</div>
+                    onChange={e => setForm({ ...form, manager_code: e.target.value })} />
                 </div>
               </>
-            )}
-
-            {mode === 'register' && !isManager && (
-              <div style={{ padding: '9px 12px', background: '#1e3a5f', border: '1px solid #3b82f6', borderRadius: '8px', fontSize: '11px', color: '#93c5fd' }}>
-                ℹ️ Your email must be pre-registered by your manager.
-              </div>
             )}
 
             {error && (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCapacity, getProjects, getTasks, getMembers } from '../services/api';
+import { getCapacity, getProjects, getTasks, getMembers, downloadCSV } from '../services/api';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   AreaChart, Area, PieChart, Pie, Legend,
@@ -41,33 +41,34 @@ export default function Analytics() {
   const [error,    setError]    = useState(null);
 
   useEffect(() => {
-    Promise.all([getCapacity(), getProjects(), getTasks(), getMembers()])
-      .then(([capRes, projRes, taskRes, memRes]) => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        const [capRes, projRes, taskRes, memRes] = await Promise.all([
+          getCapacity(), getProjects(), getTasks(), getMembers()
+        ]);
         setCapacity(capRes.data.data || []);
         setProjects(projRes.data.data || []);
         setTasks(taskRes.data.data || []);
         setMembers(memRes.data.data || []);
+      } catch (err) {
+        console.error('Analytics load error:', err);
+        setError('Failed to load analytics data');
+      } finally {
         setLoading(false);
-      })
-      .catch(err => {
-        console.error("Analytics fetch error:", err);
-        setError("Failed to load analytics data.");
-        setLoading(false);
-      });
+      }
+    };
+    load();
   }, []);
 
-  if (loading) return <div className="page" style={{ textAlign: 'center', padding: '100px' }}>Loading analytics...</div>;
-  if (error) return <div className="page" style={{ textAlign: 'center', padding: '100px', color: 'var(--red)' }}>{error}</div>;
-
-  const utilizationData = capacity.map(m => ({
-    name: m.name?.split(' ')[0] || 'Unknown',
-    allocated: parseInt(m.allocated_percent) || 0,
-    available: parseInt(m.available_percent) || 0,
-  }));
+  const utilizationData = capacity.map(c => ({
+    name: c.name?.split(' ')[0],
+    allocated: parseInt(c.allocated_percent) || 0,
+    available: parseInt(c.available_percent) || 0,
+  })).slice(0, 10);
 
   const statusCount = projects.reduce((acc, p) => {
-    const status = p.status || 'Unknown';
-    acc[status] = (acc[status] || 0) + 1;
+    acc[p.status] = (acc[p.status] || 0) + 1;
     return acc;
   }, {});
   const pieData      = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
@@ -92,6 +93,9 @@ export default function Analytics() {
     ? Math.round(capacity.reduce((s, c) => s + (parseInt(c.allocated_percent) || 0), 0) / capacity.length)
     : 0;
   const overloaded = capacity.filter(c => (parseInt(c.allocated_percent) || 0) > 90).length;
+
+  if (loading) return <div className="loading-state">Generating reports...</div>;
+  if (error) return <div className="error-state">{error}</div>;
 
   return (
     <div className="page">
