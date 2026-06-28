@@ -80,17 +80,12 @@ export default function App() {
     const API_BASE = import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api';
     const check = async () => {
       try {
-<<<<<<< HEAD
         // 1. Establish the dynamic base URL routing
       const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
       // 2. Use a template literal to swap out the hardcoded localhost string
       const res = await fetch(`${baseUrl}/projects`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('bsx_token')}` }
-=======
-        const res  = await fetch(`${API_BASE}/projects`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('bsx_token')}` }
->>>>>>> 46e63dd50bfab9cc4bbdbf29858ef173f5275426
         });
         const data = await res.json();
         const urgent = (data.data || []).filter(p => {
