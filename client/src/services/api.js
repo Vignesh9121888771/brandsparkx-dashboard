@@ -27,6 +27,7 @@ API.interceptors.response.use(
 );
 
 export const getPendingProgressUpdates = ()          => API.get('/tasks/progress/pending');
+export const getProductivitySummary    = ()          => API.get('/tasks/productivity/summary');
 export const createBulkMembers         = (data)      => API.post('/members/bulk', data);
 export const submitTaskProgress   = (id, data) => API.post(`/tasks/${id}/progress`, data);
 export const getPendingProgress   = ()          => API.get('/tasks/progress/pending');
