@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { getCapacity, getTasks } from '../services/api';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api';
 
 const getProductivityStatus = (score) => {
   const s = parseFloat(score) || 0;
