@@ -67,6 +67,9 @@ Keep your response concise — 3 short paragraphs max:
 
     const data = await response.json();
 
+    console.log("Gemini Status:", response.status);
+    console.log("Gemini Response:", JSON.stringify(data, null, 2));
+    
     if (!response.ok) {
   console.error("Gemini Status:", response.status);
   console.error("Gemini API Error:", JSON.stringify(data, null, 2));
