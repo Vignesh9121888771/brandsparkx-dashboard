@@ -35,10 +35,6 @@ console.log(
   process.env.GEMINI_API_KEY?.substring(0, 8)
 );
 
-    // Call Gemini API
-   const response = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
-);
 
 
 console.log("Available Models:");
@@ -47,17 +43,16 @@ console.log(JSON.stringify(data, null, 2));
 return res.json(data);
 
     const data = await response.json();
+const response = await fetch(
+  `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
+);
 
-    console.log("Gemini Status:", response.status);
-    console.log("Gemini Response:", JSON.stringify(data, null, 2));
+const data = await response.json();
 
-    if (!response.ok) {
-  throw new Error(
-    data.error?.message || `Gemini API returned ${response.status}`
-  );
-}
-    const suggestion = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Unable to generate suggestion.';
-    res.json({ success: true, suggestion, members: membersData });
+console.log("Available Models:");
+console.log(JSON.stringify(data, null, 2));
+
+return res.json(data);
   } catch (err) {
   console.error("AI Controller Error:", err);
   next(err);
