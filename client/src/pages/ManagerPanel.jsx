@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ReactMarkdown from "react-markdown";
 import { 
   getProjects, getMembers, getCapacity, getTasks, getRequests, 
   updateRequest, createTask, getAISuggestion, getPendingProgressUpdates,
@@ -572,8 +573,24 @@ export default function ManagerPanel({ user }) {
           <div className="card">
             <div className="card-title">AI Response</div>
             {aiLoading && <div style={{ display:'flex', gap:'8px', alignItems:'center', color:'var(--text-dim)', fontSize:'12px' }}><div className="spinner" />Analyzing team data...</div>}
-            {aiResult && !aiLoading && <div style={{ fontSize:'12px', lineHeight:'1.7', color:'var(--text-secondary)', background:'var(--bg-hover)', padding:'12px', borderRadius:'8px', border:'1px solid var(--border-light)', whiteSpace:'pre-wrap' }}>{aiResult}</div>}
-            {!aiResult && !aiLoading && <div style={{ color:'var(--text-dim)', fontSize:'12px', textAlign:'center', padding:'30px' }}>Fill in the task details and click "Get Suggestion"</div>}
+{aiResult && !aiLoading && (
+  <div
+    style={{
+      fontSize: "12px",
+      lineHeight: "1.7",
+      color: "var(--text-secondary)",
+      background: "var(--bg-hover)",
+      padding: "12px",
+      borderRadius: "8px",
+      border: "1px solid var(--border-light)",
+      whiteSpace: "pre-wrap"
+    }}
+  >
+    <ReactMarkdown>
+      {aiResult}
+    </ReactMarkdown>
+  </div>
+)}            {!aiResult && !aiLoading && <div style={{ color:'var(--text-dim)', fontSize:'12px', textAlign:'center', padding:'30px' }}>Fill in the task details and click "Get Suggestion"</div>}
           </div>
         </div>
       )}
