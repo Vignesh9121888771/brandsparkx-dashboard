@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { login, register } from '../services/api';
 import axios from 'axios';
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const BASE = import.meta.env.VITE_API_URL || 'http://https://brandsparkx-dashboard.onrender.com/api';
 
 const inp = {
   width: '100%', padding: '11px 13px',

@@ -77,11 +77,10 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    const API_BASE = import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api';
     const check = async () => {
       try {
         // 1. Establish the dynamic base URL routing
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      const baseUrl = import.meta.env.VITE_API_URL || 'https://brandsparkx-dashboard.onrender.com/api';
 
       // 2. Use a template literal to swap out the hardcoded localhost string
       const res = await fetch(`${baseUrl}/projects`, {
