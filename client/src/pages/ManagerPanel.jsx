@@ -125,15 +125,31 @@ export default function ManagerPanel({ user }) {
   };
 
   const askAI = async () => {
-    if (!aiQuery.task_title) return alert('Enter a task title');
-    setAiLoading(true); setAiResult('');
-    try {
-      const res = await getAISuggestion(aiQuery);
-      setAiResult(res.data.suggestion);
-    } catch {
-      setAiResult('AI service currently unavailable. Please try again later.');
-    } finally { setAiLoading(false); }
-  };
+  if (!aiQuery.task_title) return alert("Enter a task title");
+
+  setAiLoading(true);
+  setAiResult("");
+
+  try {
+    const res = await getAISuggestion(aiQuery);
+
+    console.log("AI Response:", res);
+    console.log("AI Response Data:", res.data);
+
+    setAiResult(res.data.suggestion);
+  } catch (err) {
+    console.error("AI Error:", err);
+
+    if (err.response) {
+      console.log("Status:", err.response.status);
+      console.log("Data:", err.response.data);
+    }
+
+    setAiResult("AI service currently unavailable. Please try again later.");
+  } finally {
+    setAiLoading(false);
+  }
+};
 
   const addRow    = () => setBulkMembers(b => [...b, { ...EMPTY_MEMBER }]);
   const removeRow = (i) => setBulkMembers(b => b.filter((_,idx) => idx !== i));
