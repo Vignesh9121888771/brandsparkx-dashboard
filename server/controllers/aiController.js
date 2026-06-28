@@ -36,15 +36,59 @@ console.log(
 );
 
 const response = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              text: `You are a resource allocation assistant for BrandSparkX, a digital marketing agency with operations in India and UAE.
+
+Task to assign: "${task_title}"
+Description: "${task_description || "No description provided"}"
+Required role: "${required_role || "Any"}"
+
+Available team members:
+${JSON.stringify(membersData, null, 2)}
+
+Recommend the best member to assign this task to.
+Keep the answer within 3 short paragraphs:
+1. Best recommendation and why
+2. Capacity risk
+3. Alternative recommendation`
+            }
+          ]
+        }
+      ]
+    })
+  }
 );
 
 const data = await response.json();
 
-console.log("Available Models:");
-console.log(JSON.stringify(data, null, 2));
+console.log("Gemini Status:", response.status);
+console.log("Gemini Response:", JSON.stringify(data, null, 2));
 
-return res.json(data);
+if (!response.ok) {
+  throw new Error(
+    data.error?.message || `Gemini API returned ${response.status}`
+  );
+}
+
+const suggestion =
+  data.candidates?.[0]?.content?.parts?.[0]?.text ||
+  "Unable to generate suggestion.";
+
+return res.json({
+  success: true,
+  suggestion,
+  members: membersData,
+});
 
   } catch (err) {
   console.error("AI Controller Error:", err);
