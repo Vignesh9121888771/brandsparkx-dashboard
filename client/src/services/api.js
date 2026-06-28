@@ -82,3 +82,24 @@ export const deleteMember     = (id) => API.delete(`/members/${id}`);
 export const deleteProject    = (id) => API.delete(`/projects/${id}`);
 
 export const getAISuggestion  = (data) => API.post('/ai/suggest', data);
+
+export const downloadCSV = (data, filename) => {
+  if (!data || !data.length) return;
+  const headers = Object.keys(data[0]).join(',');
+  const rows = data.map(row =>
+    Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')
+  );
+  const csvContent = [headers, ...rows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${filename}_${new Date().toISOString().slice(0,10)}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+export const getTaskComments    = (taskId) => API.get(`/comments/${taskId}`);
+export const createTaskComment  = (taskId, data) => API.post(`/comments/${taskId}`, data);

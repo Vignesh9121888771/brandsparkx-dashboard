@@ -50,6 +50,7 @@ app.use('/api/allocations', require('./routes/allocations'));
 app.use('/api/requests',    require('./routes/requests'));
 app.use('/api/tasks',       require('./routes/tasks'));
 app.use('/api/ai',          require('./routes/ai'));
+app.use('/api/comments',      require('./routes/comments'));
 
 app.use(errorHandler);
 

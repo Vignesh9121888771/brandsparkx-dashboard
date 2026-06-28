@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCapacity, getTasks, getProductivitySummary } from '../services/api';
+import { getCapacity, getTasks, getProductivitySummary, downloadCSV } from '../services/api';
 
 const getProductivityStatus = (score) => {
   const s = parseFloat(score) || 0;
@@ -86,6 +86,7 @@ export default function TeamCapacity({ search, defaultRegion }) {
       <div className="page-header">
         <div>
           <h1>Team Capacity & Productivity</h1>
+          <button className="btn btn-ghost" style={{ marginTop:"8px" }} onClick={() => downloadCSV(members, "productivity_report")}>📥 Download Performance CSV</button>
           <p>Real-time resource allocation and performance tracking.</p>
         </div>
       </div>

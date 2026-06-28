@@ -1,8 +1,63 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   getRequests, createRequest, updateRequest, getMembers,
-  getTasks, submitTaskProgress
+  getTasks, submitTaskProgress, getTaskComments, createTaskComment
 } from '../services/api';
+
+const CommentSection = ({ taskId }) => {
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const loadComments = useCallback(async () => {
+    try {
+      const res = await getTaskComments(taskId);
+      setComments(res.data.data || []);
+    } catch (e) { console.error(e); }
+  }, [taskId]);
+
+  useEffect(() => { loadComments(); }, [loadComments]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+    setLoading(true);
+    try {
+      await createTaskComment(taskId, { content: newComment });
+      setNewComment('');
+      loadComments();
+    } catch (e) { alert('Failed to post comment'); }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ marginTop:'16px', paddingTop:'16px', borderTop:'1px solid var(--border-light)' }}>
+       <div style={{ fontSize:'11px', fontWeight:'700', color:'var(--text-dim)', textTransform:'uppercase', marginBottom:'12px' }}>Discussion</div>
+       <div style={{ display:'flex', flexDirection:'column', gap:'10px', maxHeight:'150px', overflowY:'auto', marginBottom:'12px' }}>
+          {comments.map(c => (
+            <div key={c.id} style={{ fontSize:'12px', background:'var(--bg-hover)', padding:'8px 10px', borderRadius:'8px' }}>
+               <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'4px' }}>
+                  <span style={{ fontWeight:'600', color:'var(--purple-light)' }}>{c.user_name}</span>
+                  <span style={{ fontSize:'10px', color:'var(--text-dim)' }}>{new Date(c.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+               </div>
+               <div style={{ color:'var(--text-secondary)' }}>{c.content}</div>
+            </div>
+          ))}
+          {comments.length === 0 && <div style={{ fontSize:'11px', color:'var(--text-dim)', textAlign:'center' }}>No comments yet.</div>}
+       </div>
+       <form onSubmit={handleSubmit} style={{ display:'flex', gap:'6px' }}>
+          <input
+            className="inp"
+            placeholder="Write a comment..."
+            value={newComment}
+            onChange={e => setNewComment(e.target.value)}
+            style={{ height:'32px', fontSize:'11px' }}
+          />
+          <button className="btn btn-primary" style={{ padding:'0 12px', height:'32px' }} disabled={loading}>Send</button>
+       </form>
+    </div>
+  );
+};
 
 export default function Requests({ role, user, search }) {
   const [requests,  setRequests]  = useState([]);
@@ -15,8 +70,8 @@ export default function Requests({ role, user, search }) {
   const [progressForm, setProgressForm] = useState({});
   const [progressNote, setProgressNote] = useState({});
   const [submitting,   setSubmitting]   = useState({});
-  const [successMsg,   setSuccessMsg]   = useState({});
-  const [errorMsg,     setErrorMsg]     = useState({});
+  const [setSuccessMsg]   = useState({});
+  const [setErrorMsg]     = useState({});
 
   // New request form
   const [form, setForm] = useState({
@@ -246,12 +301,13 @@ export default function Requests({ role, user, search }) {
                            onChange={(e) => setProgressNote(prev => ({ ...prev, [task.id]: e.target.value }))}
                            style={{ padding: '8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border)', fontSize: '11px', resize: 'none', height: '50px' }}
                          />
-                         {successMsg[task.id] && <div style={{ fontSize: '10px', color: 'var(--green)' }}>{successMsg[task.id]}</div>}
-                         {errorMsg[task.id] && <div style={{ fontSize: '10px', color: 'var(--red)' }}>{errorMsg[task.id]}</div>}
                        </div>
                      )}
                   </div>
                 )}
+
+                {/* Comments Section */}
+                <CommentSection taskId={task.id} />
               </div>
             );
           })}
