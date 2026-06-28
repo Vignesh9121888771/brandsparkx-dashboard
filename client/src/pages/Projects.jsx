@@ -30,6 +30,7 @@ export default function Projects({ user, search }) {
 
   const load = useCallback(async () => {
     try {
+      setLoading(true);
       const [pRes, mRes] = await Promise.all([getProjects(), getMembers()]);
       setProjects(pRes.data.data || []);
       setMembers(mRes.data.data   || []);
@@ -69,6 +70,16 @@ export default function Projects({ user, search }) {
     setShowForm(true);
   };
 
+  const handleDeliver = async (p) => {
+    if (!window.confirm(`Mark "${p.name}" as Completed/Delivered?`)) return;
+    try {
+      await updateProject(p.id, { ...p, status: 'Completed', progress: 100 });
+      load();
+    } catch {
+      alert('Failed to update project status');
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this project?')) return;
     try {
@@ -76,6 +87,8 @@ export default function Projects({ user, search }) {
       load();
     } catch { alert('Failed to delete'); }
   };
+
+  const isManager = user?.role === 'manager';
 
   const filtered = projects.filter(p =>
     p.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -142,7 +155,7 @@ export default function Projects({ user, search }) {
               <label>Project Manager</label>
               <select value={form.manager_id} onChange={e => setForm({...form, manager_id:e.target.value})}>
                 <option value="">Select Manager</option>
-                {members.filter(m => m.role === 'Manager' || m.role === 'Admin').map(m => (
+                {members.filter(m => m.role === 'Manager' || m.role === 'Admin' || m.role === 'Lead').map(m => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
@@ -169,9 +182,12 @@ export default function Projects({ user, search }) {
                 background: statusColors[p.status]?.bg || 'var(--bg-hover)',
                 color: statusColors[p.status]?.color || 'var(--text-dim)'
               }}>{p.status}</span>
-              <div style={{ display:'flex', gap:'4px' }}>
-                <button onClick={() => handleEdit(p)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>✏️</button>
-                <button onClick={() => handleDelete(p.id)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>🗑️</button>
+              <div style={{ display:'flex', gap:'8px' }}>
+                {isManager && p.status !== 'Completed' && (
+                  <button onClick={() => handleDeliver(p)} title="Deliver Project" style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>📦</button>
+                )}
+                <button onClick={() => handleEdit(p)} title="Edit" style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>✏️</button>
+                <button onClick={() => handleDelete(p.id)} title="Delete" style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px' }}>🗑️</button>
               </div>
             </div>
 

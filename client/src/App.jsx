@@ -90,16 +90,28 @@ export default function App() {
 
     const check = async () => {
       try {
-        const res  = await fetch(`${API_BASE}/projects`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('bsx_token')}` }
-        });
-        const data = await res.json();
-        const urgent = (data.data || []).filter(p => {
+        const [projRes, taskRes] = await Promise.all([
+          fetch(`${API_BASE}/projects`, { headers: { Authorization: `Bearer ${localStorage.getItem('bsx_token')}` } }),
+          fetch(`${API_BASE}/tasks`, { headers: { Authorization: `Bearer ${localStorage.getItem('bsx_token')}` } })
+        ]);
+
+        const projData = await projRes.json();
+        const taskData = await taskRes.json();
+
+        const pUrgent = (projData.data || []).filter(p => {
           if (!p.deadline || p.status === 'Completed') return false;
           const days = Math.ceil((new Date(p.deadline) - new Date()) / (1000*60*60*24));
           return days <= 7 && days >= 0;
-        });
-        setAlerts(urgent);
+        }).map(p => ({ ...p, type: 'project' }));
+
+        const tUrgent = (taskData.data || []).filter(t => {
+          if (user.role === 'employee' && t.assigned_to !== user.member_id) return false;
+          if (!t.due_date || t.status === 'Completed') return false;
+          const days = Math.ceil((new Date(t.due_date) - new Date()) / (1000*60*60*24));
+          return days <= 3 && days >= 0;
+        }).map(t => ({ ...t, type: 'task', name: t.title }));
+
+        setAlerts([...pUrgent, ...tUrgent]);
       } catch (e) { console.error(e); }
     };
     check();
@@ -226,10 +238,12 @@ export default function App() {
                   {alerts.length > 0 && <span className="badge badge-red">{alerts.length} urgent</span>}
                 </div>
                 <div style={{ maxHeight:'240px', overflowY:'auto' }}>
-                  {alerts.length === 0 ? <div style={{ padding:'20px', textAlign:'center', color:'var(--text-dim)', fontSize:'12px' }}>All clear ✅</div> : alerts.map(a => (
-                    <div key={a.id} className="dropdown-item" onClick={() => navigate('projects')}>
+                  {alerts.length === 0 ? <div style={{ padding:'20px', textAlign:'center', color:'var(--text-dim)', fontSize:'12px' }}>All clear ✅</div> : alerts.map((a, i) => (
+                    <div key={i} className="dropdown-item" onClick={() => navigate(a.type === 'project' ? 'projects' : 'requests')}>
                        <div style={{ fontSize:'12px', fontWeight:'500' }}>{a.name}</div>
-                       <div style={{ fontSize:'11px', color:'var(--red)' }}>Deadline: {new Date(a.deadline).toLocaleDateString()}</div>
+                       <div style={{ fontSize:'11px', color:'var(--red)' }}>
+                          {a.type === 'project' ? 'Project deadline approaching' : 'Task due very soon'}
+                       </div>
                     </div>
                   ))}
                 </div>
