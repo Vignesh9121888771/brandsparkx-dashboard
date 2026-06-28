@@ -82,8 +82,12 @@ export default function App() {
     if (!user) return;
     const check = async () => {
       try {
-        const res  = await fetch('http://localhost:5000/api/projects', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('bsx_token')}` }
+        // 1. Establish the dynamic base URL routing
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+      // 2. Use a template literal to swap out the hardcoded localhost string
+      const res = await fetch(`${baseUrl}/projects`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('bsx_token')}` }
         });
         const data = await res.json();
         const urgent = (data.data || []).filter(p => {
