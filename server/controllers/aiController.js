@@ -36,34 +36,16 @@ console.log(
 );
 
     // Call Gemini API
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `You are a resource allocation assistant for BrandSparkX, a digital marketing agency with operations in India and UAE.
+   const response = await fetch(
+  `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
+);
 
-Task to assign: "${task_title}"
-Description: "${task_description || 'No description provided'}"
-Required role: "${required_role || 'Any'}"
+const data = await response.json();
 
-Available team members and their current workload:
-${JSON.stringify(membersData, null, 2)}
+console.log("Available Models:");
+console.log(JSON.stringify(data, null, 2));
 
-Based on the task requirements, role match, and available capacity, suggest the best person to assign this task to.
-Keep your response concise — 3 short paragraphs max:
-1. Who you recommend and why
-2. Any overallocation risk to watch out for
-3. One alternative if the first choice is unavailable`
-            }]
-          }]
-        })
-      }
-    );
+return res.json(data);
 
     const data = await response.json();
 
